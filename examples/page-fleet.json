@@ -1,0 +1,13 @@
+{
+  "request_id":"f406b162-07e1-44c4-a836-406bdddeae21",
+  "specification":{
+    "title":"交车照片缺项核查",
+    "purpose":"根据模拟交车清单，给两家门店安排补拍。",
+    "blocks":[
+      {"kind":"facts","source_ref":"fleet-summary"},
+      {"kind":"table","source_ref":"fleet-gaps","columns":["branch","vehicle","missing","record"]},
+      {"kind":"input","field_ref":"fleet-arrangement"}
+    ],
+    "actions":[{"kind":"submit_response","reference":"record-arrangement"}]
+  }
+}

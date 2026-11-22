@@ -1,0 +1,15 @@
+{
+  "principal": "employee-042",
+  "workspace": "staff-training",
+  "task": "enrolment-january",
+  "facts": {
+    "course": {"label":"课程安排","items":[{"label":"课程","value":"客户沟通实务"}]}
+  },
+  "tables": {},
+  "fields": {
+    "shift": {"label":"参加班次","type":"select","required":true,"options":["周二上午","周四下午"]}
+  },
+  "actions": {
+    "apply": {"kind":"training.apply","label":"提交报名意向"}
+  }
+}

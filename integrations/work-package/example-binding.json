@@ -1,0 +1,27 @@
+{
+  "contract_version": "1.0",
+  "package_id": "vehicle-handover",
+  "package_version": "1.0.0",
+  "work_id": "handover",
+  "views": {
+    "intake": {
+      "kind": "form",
+      "collection_ref": "vehicle-intake"
+    },
+    "entries": {
+      "kind": "list",
+      "collection_ref": "vehicle-intake"
+    },
+    "review": {
+      "kind": "interaction",
+      "specification": {
+        "title": "车辆交接核对说明",
+        "purpose": "交车前查看本工作包的核对要求。",
+        "blocks": [
+          { "kind": "narrative", "text": "请核对车牌号、交车门店和交车里程。需要保存一笔交接时，打开车辆交接登记表。" }
+        ],
+        "actions": []
+      }
+    }
+  }
+}

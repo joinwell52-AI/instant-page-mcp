@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "工作包页面接入声明 1.0",
+  "description": "由宿主按已选工作和已固定版本解析。页面资源用于选择页面和形态，其内容不会授予访问权限。",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "package_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+      "description": "宿主提供的业务引用标识。"
+    },
+    "package_version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$",
+      "not": {
+        "pattern": "^(?:[Ll][Aa][Tt][Ee][Ss][Tt]|[Cc][Uu][Rr][Rr][Ee][Nn][Tt])$"
+      }
+    },
+    "work_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+      "description": "宿主提供的业务引用标识。"
+    },
+    "views": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+        "description": "宿主提供的业务引用标识。"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "form",
+                  "list"
+                ]
+              },
+              "collection_ref": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+                "description": "宿主提供的业务引用标识。"
+              }
+            },
+            "required": [
+              "kind",
+              "collection_ref"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "interaction"
+              },
+              "specification": {
+                "$ref": "#/$defs/interaction"
+              }
+            },
+            "required": [
+              "kind",
+              "specification"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "package_id",
+    "package_version",
+    "work_id"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "interaction": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$"
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "narrative"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000,
+                    "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "facts"
+                  },
+                  "source_ref": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+                    "description": "宿主提供的业务引用标识。"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "source_ref"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "table"
+                  },
+                  "source_ref": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+                    "description": "宿主提供的业务引用标识。"
+                  },
+                  "columns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+                    },
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "kind",
+                  "source_ref"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "input"
+                  },
+                  "field_ref": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+                    "description": "宿主提供的业务引用标识。"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "field_ref"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "pattern": "^(?:submit_task_draft|decide_approval|submit_response|ask_followup|[a-z][a-z0-9_]{0,31}(?:\\.[a-z][a-z0-9_]{0,31}){1,3})$"
+              },
+              "reference": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$",
+                "description": "宿主提供的业务引用标识。"
+              }
+            },
+            "required": [
+              "kind",
+              "reference"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "title",
+        "purpose",
+        "blocks",
+        "actions"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

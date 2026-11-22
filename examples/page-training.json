@@ -1,0 +1,14 @@
+{
+  "request_id": "9e9e12f0-584e-4b26-90b4-dc96758aa09b",
+  "specification": {
+    "title": "选择本次培训班次",
+    "purpose": "核对课程并提交个人报名意向。",
+    "blocks": [
+      {"kind":"facts","source_ref":"course"},
+      {"kind":"input","field_ref":"shift"}
+    ],
+    "actions": [
+      {"kind":"training.apply","reference":"apply"}
+    ]
+  }
+}

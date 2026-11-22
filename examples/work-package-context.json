@@ -1,0 +1,22 @@
+{
+  "principal": "demo-fleet-clerk",
+  "workspace": "demo-fleet",
+  "task": "daily-vehicle-intake",
+  "facts": {},
+  "tables": {},
+  "actions": {},
+  "fields": {
+    "plate": { "label": "车牌号", "type": "text", "required": true, "max_length": 16 },
+    "branch": { "label": "交车门店", "type": "select", "required": true, "options": ["城南店", "城北店"] },
+    "intake-date": { "label": "交车日期", "type": "date", "required": true },
+    "mileage": { "label": "交车里程（公里）", "type": "number", "required": true, "integer": true, "min": 0 },
+    "note": { "label": "交车备注", "type": "textarea", "max_length": 400 }
+  },
+  "work_packages": {
+    "vehicle-intake": {
+      "label": "车辆交接登记",
+      "parameters": ["plate", "branch", "intake-date", "mileage", "note"],
+      "list_columns": ["plate", "branch", "intake-date"]
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "instant-page-mcp",
+  "version": "0.4.1",
+  "description": "从工作包参数生成录入表单、记录列表和详情，也支持按需生成独立交互页。",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "instant-page-mcp": "./bin/mcp.mjs",
+    "instant-page-mcp-service": "./bin/service.mjs",
+    "instant-page-mcp-demo": "./bin/demo.mjs"
+  },
+  "scripts": {
+    "start": "node src/mcp.mjs",
+    "service": "node src/service.mjs",
+    "demo": "node bin/demo.mjs",
+    "test": "node --test test/mcp.test.mjs test/render.test.mjs test/service.test.mjs test/generic-host.test.mjs test/work-package.test.mjs test/field-contract.test.mjs test/registry-contract.test.mjs test/link-lifetime.test.mjs test/field-feedback.test.mjs integrations/work-package/adapter.test.mjs integrations/work-package/frozen-asset.test.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "examples/",
+    "schemas/",
+    "skills/",
+    "通用即时页面生成器MCP-开发手册.md",
+    "integrations/work-package/*.mjs",
+    "integrations/work-package/*.json",
+    "!integrations/work-package/*.test.mjs",
+    "integrations/weixin/bridge.mjs",
+    "integrations/weixin/package.json",
+    "integrations/weixin/package-lock.json"
+  ],
+  "exports": {
+    "./service": "./src/service.mjs",
+    "./work-package/adapter": "./integrations/work-package/adapter.mjs",
+    "./work-package/frozen-asset": "./integrations/work-package/frozen-asset.mjs",
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joinwell52-AI/instant-page-mcp.git"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "field_spec_version": "1.0",
+  "principal": "demo-intake-agent",
+  "workspace": "demo-operations",
+  "task": "contact-records",
+  "facts": {},
+  "tables": {},
+  "actions": {},
+  "fields": {
+    "mobile": { "label": "联系手机", "type": "text", "format": "cn_mobile", "required": true },
+    "resident_id": { "label": "公民身份号码", "type": "text", "format": "cn_resident_id" },
+    "appointment_date": { "label": "预约日期", "type": "date", "required": true },
+    "headcount": { "label": "预约人数", "type": "number", "integer": true, "min": 1, "max": 20, "required": true }
+  },
+  "work_packages": {
+    "contact-intake": {
+      "label": "预约联系登记",
+      "parameters": ["mobile", "resident_id", "appointment_date", "headcount"],
+      "list_columns": ["appointment_date", "headcount"]
+    }
+  }
+}

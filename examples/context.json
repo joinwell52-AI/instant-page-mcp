@@ -1,0 +1,37 @@
+{
+  "principal":"demo-operator",
+  "workspace":"demo-workspace",
+  "task":"demo-business-day",
+  "facts": {
+    "fleet-summary": {
+      "label": "交车清单摘要",
+      "items": [
+        {"label":"核查车辆","value":"7 辆"},
+        {"label":"照片缺项","value":"3 辆"},
+        {"label":"涉及门店","value":"2 家"}
+      ]
+    }
+  },
+  "tables": {
+    "fleet-gaps": {
+      "label":"待补照片",
+      "columns":{"branch":"门店","vehicle":"车辆代号","missing":"缺少部位","record":"清单项"},
+      "rows":[
+        {"branch":"样例城南店","vehicle":"演示车 01","missing":"右后门","record":"A-01"},
+        {"branch":"样例城南店","vehicle":"演示车 03","missing":"仪表盘","record":"A-03"},
+        {"branch":"样例城北店","vehicle":"演示车 05","missing":"交车全景","record":"B-05"}
+      ]
+    }
+  },
+  "fields":{
+    "fleet-arrangement":{"label":"本次补拍安排","type":"textarea","required":true,"max_length":400},
+    "visit-date":{"label":"到访日期","type":"date","required":true},
+    "visit-time":{"label":"可选时段","type":"select","required":true,"options":["09:00–10:00","14:00–15:00"]},
+    "visit-count":{"label":"同行人数","type":"number","required":true,"min":1,"max":6,"integer":true},
+    "visit-note":{"label":"接待备注","type":"text","max_length":100}
+  },
+  "actions":{
+    "record-arrangement":{"kind":"submit_response","label":"提交补拍安排"},
+    "record-visit":{"kind":"visits.request_slot","label":"提交到访意向"}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "codeflowmu-weixin-page-bridge-example",
+  "version": "0.4.0",
+  "description": "微信 MCP 作为 MCP 客户端，委托独立即时页面生成器。",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "@modelcontextprotocol/sdk": "1.32.1" },
+  "scripts": { "start": "node bridge.mjs", "test": "node --test bridge.test.mjs" }
+}

@@ -1,0 +1,211 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync,readdirSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {randomBytes,randomUUID} from 'node:crypto';
+import {createPageService} from '../src/service.mjs';
+
+const fixture=name=>JSON.parse(readFileSync(new URL('../examples/'+name,import.meta.url),'utf8'));
+async function setup(t) {
+  const directory=mkdtempSync(join(tmpdir(),'instant-pages-'));
+  const contextFile=join(directory,'context.json');
+  const context={...fixture('context.json'),principal:'员工甲',workspace:'项目一',task:'任务A'};
+  const setContext=registry=>writeFileSync(contextFile,JSON.stringify(registry));
+  setContext(context);
+  const secret=()=>randomBytes(32).toString('base64url');
+  let capability=secret(),service,base;
+  const start=async()=>{
+    service=createPageService({directory,contextFile,capability});
+    base='http://127.0.0.1:'+await service.listen(0);
+  };
+  await start();
+  t.after(async()=>{await service.close();rmSync(directory,{recursive:true,force:true});});
+  const api=(op,data,header='Bearer '+capability)=>fetch(base+'/v1/pages/'+op,{
+    method:'POST',headers:{authorization:header,'content-type':'application/json'},body:JSON.stringify(data)
+  });
+  return { directory,context,contextFile,setContext,api,get base(){return base;},get service(){return service;},get capability(){return capability;},
+    restart:async(rotate=false)=>{await service.close();if(rotate)capability=secret();await start();}};
+}
+const token=html=>/name="form_token" value="([^"]+)"/.exec(html)[1];
+const submit=(base,id,fields,origin=base)=>fetch(base+'/p/'+id+'/submit',{
+  method:'POST',redirect:'manual',headers:{origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams(fields)
+});
+test('按需生成与幂等，两种实际 HTML、正式提交回读以及重启恢复',async t=>{
+  const site=await setup(t);
+  const a=fixture('page-fleet.json'),b=fixture('page-other.json');
+  const page=await(await site.api('generate',a)).json();
+  assert.equal(page.state,'open');
+  const other=await(await site.api('generate',b)).json();
+  assert.notEqual(other.page_id,page.page_id);
+  const html=await(await fetch(page.url)).text();
+  const different=await(await fetch(other.url)).text();
+  assert.ok(html.includes(a.specification.title));
+  assert.ok(different.includes(b.specification.title));
+  assert.ok(!html.includes(b.specification.title));
+  assert.equal(page.url,(await(await site.api('generate',a)).json()).url);
+  assert.equal((await site.api('generate',{...a,specification:b.specification})).status,409);
+  assert.equal((await site.api('read',{page_id:page.page_id},'Bearer invalid')).status,403);
+  const fetchWithoutKey=await fetch(site.base+'/p/'+page.page_id);
+  assert.equal(fetchWithoutKey.status,403);
+  const fields={form_token:token(html),action:'record-arrangement','field.fleet-arrangement':'下午补齐 <x> & 核对'};
+  assert.equal((await submit(site.base,page.page_id,fields,'https://wrong.example')).status,403);
+  assert.equal((await submit(site.base,page.page_id,{...fields,form_token:'bad'})).status,403);
+  assert.equal((await submit(site.base,page.page_id,{...fields,action:'record-visit'})).status,400);
+  assert.equal((await submit(site.base,page.page_id,fields)).status,303);
+  assert.equal((await submit(site.base,page.page_id,fields)).status,303);
+  assert.equal((await submit(site.base,page.page_id,{...fields,'field.fleet-arrangement':'另一个答案'})).status,409);
+  const receipt=await(await site.api('result',{page_id:page.page_id})).json();
+  assert.equal(receipt.state,'submitted');
+  assert.equal(receipt.submission.action,'submit_response');
+  assert.equal(receipt.submission.reference,'record-arrangement');
+  assert.equal(receipt.submission.values['fleet-arrangement'],fields['field.fleet-arrangement']);
+  const submittedHTML=await(await fetch(page.url)).text();
+  assert.match(submittedHTML,/&lt;x&gt; &amp;/);
+  assert.ok(!submittedHTML.includes('name="form_token"'));
+  const pageDirs=readdirSync(join(site.directory,'contexts'));
+  assert.equal(pageDirs.length,1);
+  assert.equal(readFileSync(join(site.directory,'contexts',pageDirs[0],a.request_id,'open.html'),'utf8'),html);
+  await site.restart();
+  const restored=await(await site.api('read',{page_id:page.page_id})).json();
+  assert.equal(restored.page_id,page.page_id);
+  assert.equal(new URL(restored.url).search,new URL(page.url).search);
+  assert.deepEqual(await(await site.api('result',{page_id:page.page_id})).json(),receipt);
+  assert.equal((await site.api('read',{page_id:randomUUID()})).status,404);
+});
+test('未授权引用失败，身份与任务变更后旧页面、回执和能力均受隔离',async t=>{
+  const site=await setup(t);
+  const args=fixture('page-fleet.json');
+  const invalid={...args,specification:{...args.specification,blocks:[{kind:'facts',source_ref:'not-granted'}]}};
+  assert.equal((await site.api('generate',invalid)).status,404);
+  const page=await(await site.api('generate',args)).json();
+  const oldURL=new URL(page.url);
+  site.setContext({...site.context,task:'任务B'});
+  assert.equal((await fetch(page.url)).status,403);
+  assert.equal((await site.api('result',{page_id:page.page_id})).status,403);
+  assert.throws(()=>createPageService({directory:site.directory,contextFile:site.contextFile,capability:site.capability}),/capability_bound/);
+  await site.restart(true);
+  assert.equal((await site.api('result',{page_id:page.page_id})).status,404);
+  assert.equal((await fetch(site.base+oldURL.pathname+oldURL.search)).status,404);
+  const inNewScope=await(await site.api('generate',args)).json();
+  assert.notEqual(inNewScope.page_id,page.page_id);
+});
+test('HTTPS 网关可用受信认证回调挂载纯浏览器接口，GET 和 POST 都要校验身份',async t=>{
+  const site=await setup(t);
+  const page=await(await site.api('generate',fixture('page-fleet.json'))).json();
+  let identity={...site.context,principal:'未获授权'};
+  const publicOrigin='https://pages.example';
+  const gateway=http.createServer(site.service.createAuthenticatedBrowserHandler({
+    origin:publicOrigin,authenticate:async()=>identity,
+  }));
+  await new Promise(resolve=>gateway.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>gateway.close(resolve)));
+  const address='http://127.0.0.1:'+gateway.address().port;
+  const path='/p/'+page.page_id;
+  assert.equal((await fetch(address+path)).status,403);
+  assert.equal((await fetch(address+'/v1/pages/read')).status,404);
+  identity=site.context;
+  const html=await(await fetch(address+path)).text();
+  assert.ok(!html.includes(new URL(page.url).searchParams.get('k')));
+  const fields={form_token:token(html),action:'record-arrangement','field.fleet-arrangement':'今天下午'};
+  identity={...site.context,workspace:'另一个工作区'};
+  assert.equal((await submit(address,page.page_id,fields,publicOrigin)).status,403);
+  identity=site.context;
+  assert.equal((await submit(address,page.page_id,fields,address)).status,403);
+  const sent=await submit(address,page.page_id,fields,publicOrigin);
+  assert.equal(sent.status,303);assert.equal(sent.headers.get('location'),path);
+});
+test('发现上下文只返回标签和引用，数据及身份留在服务端',async t=>{
+  const site=await setup(t);
+  const response=await site.api('context',{});
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.deepEqual(Object.keys(body).sort(),['actions','facts','fields','tables']);
+  assert.deepEqual(body.tables[0].columns[0],{id:'branch',label:'门店'});
+  assert.deepEqual(Object.keys(body.actions[0]).sort(),['kind','label','reference']);
+  assert.ok(!JSON.stringify(body).includes('样例城南店'));
+  assert.ok(!JSON.stringify(body).includes('员工甲'));
+  assert.ok(!JSON.stringify(body).includes('09:00'));
+  assert.equal((await site.api('context',{foo:true})).status,400);
+  assert.equal((await site.api('context',{},'Bearer invalid')).status,403);
+  site.setContext({...site.context,principal:'他人'});
+  assert.equal((await site.api('context',{})).status,403);
+});
+test('命名空间动作仅记录，普通预约结果没有业务执行副作用',async t=>{
+  const site=await setup(t);
+  const args=fixture('page-other.json');
+  const page=await(await site.api('generate',args)).json();
+  const html=await(await fetch(page.url)).text();
+  const fields={form_token:token(html),action:'record-visit','field.visit-date':'2026-11-24',
+    'field.visit-time':'09:00–10:00','field.visit-count':'3'};
+  assert.equal((await submit(site.base,page.page_id,fields)).status,303);
+  const body=await(await site.api('result',{page_id:page.page_id})).json();
+  assert.equal(body.submission.action,'visits.request_slot');
+  assert.equal(body.submission.values['visit-count'],3);
+  assert.deepEqual(Object.keys(body).sort(),['page_id','state','submission']);
+});
+
+test('身份证和手机号在工作包列表、单条详情、一次性页面回执及结果回读中按声明处理', async t => {
+  const site = await setup(t);
+  const fields = {
+    phone:{label:'联系电话',type:'text',format:'cn_mobile',required:true},
+    identity:{label:'身份证号',type:'text',format:'cn_resident_id',required:true}
+  };
+  const both = {label:'示例登记',parameters:['identity','phone']};
+  site.setContext({...site.context,fields,work_packages:{
+    private:both,explicit:{...both,list_columns:['phone','identity']}
+  }});
+  await site.restart();
+  const rawPhone='13800001234', canonicalPhone='+86'+rawPhone;
+  const rawId='11010519491231002X';
+  const phoneMask='+86138****1234', idMask='110'+'*'.repeat(12)+'02X';
+  const values={'field.phone':rawPhone,'field.identity':rawId};
+  const internal = async (operation,args) => {
+    const response=await fetch(site.base+'/v1/work-packages/'+operation,{
+      method:'POST',headers:{authorization:'Bearer '+site.capability,'content-type':'application/json'},body:JSON.stringify(args)
+    });
+    assert.equal(response.status,200);
+    return response.json();
+  };
+  for (const ref of ['private','explicit']) {
+    const descriptor=await internal('open',{package_ref:ref});
+    const page=await(await fetch(descriptor.form_url)).text();
+    const body=new URLSearchParams({form_token:token(page),...values});
+    const saved=await fetch(descriptor.form_url,{method:'POST',redirect:'manual',headers:{origin:site.base},body});
+    assert.equal(saved.status,303);
+    const list=await(await fetch(descriptor.list_url)).text();
+    assert.ok(!list.includes(rawPhone) && !list.includes(rawId));
+    assert.equal(list.includes('联系电话'),ref==='explicit');
+    assert.equal(list.includes('身份证号'),ref==='explicit');
+    assert.equal(list.includes(phoneMask),ref==='explicit');
+    assert.equal(list.includes(idMask),ref==='explicit');
+    const path=list.match(/href="([^"]+\/records\/([a-f0-9-]+)\?k=[^"]+)"/);
+    assert.ok(path);
+    const detail=await(await fetch(new URL(path[1],site.base))).text();
+    assert.ok(detail.includes(phoneMask) && detail.includes(idMask));
+    assert.ok(!detail.includes(rawPhone) && !detail.includes(rawId));
+    const row=await internal('record',{package_ref:ref,record_id:path[2]});
+    assert.deepEqual(row.values,{phone:phoneMask,identity:idMask});
+  }
+  const request={request_id:randomUUID(),specification:{title:'核对信息',purpose:'示例',
+    blocks:[{kind:'input',field_ref:'phone'},{kind:'input',field_ref:'identity'}],
+    actions:[{kind:'submit_response',reference:'record-arrangement'}]}};
+  const page=await(await site.api('generate',request)).json();
+  const html=await(await fetch(page.url)).text();
+  const answer={...values,form_token:token(html),action:'record-arrangement'};
+  assert.equal((await submit(site.base,page.page_id,answer)).status,303);
+  const receipt=await(await site.api('result',{page_id:page.page_id})).json();
+  assert.deepEqual(receipt.submission.values,{phone:phoneMask,identity:idMask});
+  const contextDir=readdirSync(join(site.directory,'contexts')).find(name=>{
+    return readdirSync(join(site.directory,'contexts',name)).includes(request.request_id);
+  });
+  const answerDir=join(site.directory,'contexts',contextDir,request.request_id,'answer');
+  const stored=JSON.parse(readFileSync(join(answerDir,'answer.json'),'utf8'));
+  assert.deepEqual(stored.values,{phone:canonicalPhone,identity:rawId});
+  // A previously cached receipt cannot override the active presentation policy.
+  writeFileSync(join(answerDir,'submitted.html'),rawId);
+  const masked=await(await fetch(page.url)).text();
+  assert.ok(masked.includes(phoneMask) && masked.includes(idMask));
+  assert.ok(!masked.includes(rawId) && !masked.includes(rawPhone));
+});

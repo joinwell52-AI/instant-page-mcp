@@ -1,0 +1,15 @@
+{
+  "request_id":"20ac6e54-6796-43be-8888-c33c6329c380",
+  "specification":{
+    "title":"登记展厅到访意向",
+    "purpose":"选择计划到访的日期、时段和人数，提交给接待人员核对。本例使用模拟时段。",
+    "blocks":[
+      {"kind":"narrative","text":"上午和下午各开放一个时段，每组最多 6 人。收到接待人员的最终确认后再安排出行。"},
+      {"kind":"input","field_ref":"visit-date"},
+      {"kind":"input","field_ref":"visit-time"},
+      {"kind":"input","field_ref":"visit-count"},
+      {"kind":"input","field_ref":"visit-note"}
+    ],
+    "actions":[{"kind":"visits.request_slot","reference":"record-visit"}]
+  }
+}
