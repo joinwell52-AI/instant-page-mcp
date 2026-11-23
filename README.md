@@ -90,7 +90,14 @@
 
 ## 本机安装与接入
 
-需要 Node.js 22 或更新版本。核心运行时零 npm 依赖。下面在 Windows PowerShell 中从本仓库根目录打包并安装。
+需要 Node.js 22 或更新版本。核心运行时零 npm 依赖。从 npm 安装后可直接启动演示。
+
+```powershell
+npm install -g instant-page-mcp@0.4.1
+instant-page-mcp-demo
+```
+
+从源码安装时，在仓库根目录用 PowerShell 打包。
 
 ```powershell
 New-Item -ItemType Directory -Force -Path release | Out-Null

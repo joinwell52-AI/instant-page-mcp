@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.joinwell52-AI/instant-page-mcp",
+  "title": "Instant Page MCP (IPM) · 即页",
+  "description": "Creates task-specific web forms and review pages. Requires a local IPM page service.",
+  "repository": {
+    "url": "https://github.com/joinwell52-AI/instant-page-mcp",
+    "source": "github"
+  },
+  "version": "0.4.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "instant-page-mcp",
+      "version": "0.4.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "PAGE_MCP_PORT",
+          "description": "Port of the running local IPM page service.",
+          "isRequired": true,
+          "placeholder": "8765"
+        },
+        {
+          "name": "PAGE_MCP_CAPABILITY",
+          "description": "Shared capability for the running local IPM page service.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

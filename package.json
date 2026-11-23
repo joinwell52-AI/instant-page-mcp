@@ -1,6 +1,7 @@
 {
   "name": "instant-page-mcp",
   "version": "0.4.1",
+  "mcpName": "io.github.joinwell52-AI/instant-page-mcp",
   "description": "为数字员工生成登记、查询选择和可编辑核对页，支持提交校验与 MCP 回读。",
   "type": "module",
   "engines": {

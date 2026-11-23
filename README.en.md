@@ -42,7 +42,14 @@ To accept one PNG or JPEG up to 10 MiB, add `attachment: {"label":"Product photo
 
 ## Install and run locally
 
-Requires Node.js 22 or later. The core has no npm runtime dependencies. Codex, CodeFlowMu, and the WeChat bridge are optional integrations. In Windows PowerShell, run from the repository root:
+Requires Node.js 22 or later. The core has no npm runtime dependencies. Codex, CodeFlowMu, and the WeChat bridge are optional integrations. Install from npm and start the demo:
+
+```powershell
+npm install -g instant-page-mcp@0.4.1
+instant-page-mcp-demo
+```
+
+To build from source, run these commands in Windows PowerShell from the repository root:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path release | Out-Null
