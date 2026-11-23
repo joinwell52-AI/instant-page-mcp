@@ -359,6 +359,7 @@ test('单次 MCP 调用定义车辆登记册，验证提交并在重启后读回
     await rm(directory, { recursive: true, force: true });
   });
   const args = JSON.parse(await readFile(new URL('../examples/work-package-vehicle-registration.json', import.meta.url), 'utf8'));
+  args.definition.appearance = {theme:'mono',layout:'grid'};
   const ref = { package_ref: args.package_ref };
   const call = (name, input) => host.tool(name, input);
   assert.equal((await call('open_work_package', ref)).structuredContent.code, 'not_found');
@@ -380,8 +381,11 @@ test('单次 MCP 调用定义车辆登记册，验证提交并在重启后读回
   assert.ok(!catalogFields.some(field => field.ref === 'engine'));
   const {form_url, list_url} = opened.structuredContent;
   const form = await openForm(form_url);
+  assert.match(form.page, /<main class="layout-grid">/);
+  assert.match(form.page, /background:#f1f2f4/);
+  assert.match(await html(list_url), /background:#f1f2f4/);
   assert.match(form.page, /<select[^>]+name="field\.color"[^>]+required/);
-  assert.deepEqual([...form.page.matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['黑色', '红色', '白色']);
+  assert.deepEqual([...form.page.split('<footer')[0].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['黑色', '红色', '白色']);
   const values = {model:'合成测试车',plate:'TEST-IPM',engine:'0001',chassis:'VIN-TEST-01',
     length:'4820',width:'1860',height:'1510',color:'白色'};
   assert.equal((await form.post({...values, color:'蓝色'})).status, 400);
@@ -411,4 +415,52 @@ test('单次 MCP 调用定义车辆登记册，验证提交并在重启后读回
   } finally {
     await other.close();
   }
+});
+
+test('产品登记图片可选，提交后随记录读回且原图按权限取得', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'product-image-'));
+  const contextFile = join(directory, 'context.json');
+  await writeFile(contextFile, JSON.stringify(JSON.parse(await readFile(example, 'utf8'))));
+  const capability = randomBytes(32).toString('base64url');
+  const host = await startHost(directory, contextFile, capability);
+  t.after(async () => {
+    await host.close();
+    await rm(directory, {recursive:true,force:true});
+  });
+  const package_ref = 'product-information';
+  const opened = await host.tool('open_work_package', {package_ref, definition:{
+    label:'产品信息登记',
+    fields:[{ref:'name',label:'产品名称',type:'text',required:true}],
+    attachment:{label:'产品图片'}
+  }});
+  assert.equal(opened.isError,false);
+  const {form_url,list_url}=opened.structuredContent;
+  const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/1WQAAAAASUVORK5CYII=','base64');
+  const file=new Blob([image],{type:'image/png'});
+  const send = async (name, includeFile) => {
+    const {page}=await openForm(form_url);
+    assert.match(page,/enctype="multipart\/form-data"/);
+    const form_token=/name="form_token" value="([^"]+)"/.exec(page)[1];
+    const body=new FormData();
+    body.set('form_token',form_token);
+    body.set('field.name',name);
+    if(includeFile) body.set('attachment',file,'product.png');
+    return fetch(form_url,{method:'POST',redirect:'manual',headers:{origin:new URL(form_url).origin},body});
+  };
+  assert.equal((await send('示例商品',true)).status,303);
+  const [detail]=detailLinks(await html(list_url),list_url);
+  const record_id=detail.pathname.split('/').at(-1);
+  assert.match(await html(detail),/product\.png/);
+  const result=await host.tool('get_work_package_record',{package_ref,record_id});
+  assert.equal(result.structuredContent.attachment.filename,'product.png');
+  assert.deepEqual(result.structuredContent.values,{name:'示例商品'});
+  const url=new URL('/v1/work-packages/attachment',form_url);
+  const read = authorization => fetch(url,{method:'POST',headers:{authorization,'content-type':'application/json'},
+    body:JSON.stringify({package_ref,record_id})});
+  assert.equal((await read('Bearer invalid')).status,403);
+  const bytes=await read('Bearer '+capability);
+  assert.equal(bytes.status,200);
+  assert.deepEqual(Buffer.from(await bytes.arrayBuffer()),image);
+  assert.equal((await send('没有附图的商品',false)).status,303);
+  assert.equal(detailLinks(await html(list_url),list_url).length,2);
 });

@@ -52,26 +52,42 @@ const initialValues = {
   type: 'object', maxProperties: MAX_PAGE_FIELDS, propertyNames: reference,
   additionalProperties: { oneOf: [{ type: 'string', maxLength: 10000 }, { type: 'number' }] }
 };
+const languagePair = objectSchema({ 'zh-CN': plain(300), en: plain(300) }, ['zh-CN','en']);
+const translations = objectSchema({
+  title: languagePair, purpose: languagePair,
+  fields: { type:'object', maxProperties:64, propertyNames:reference, additionalProperties:languagePair }
+});
+const appearance = objectSchema({
+  theme: { oneOf: ['default', 'blue', 'mono'].map(kind) },
+  layout: { oneOf: ['stacked', 'grid', 'wide'].map(kind) },
+  locale: { oneOf: ['zh-CN', 'en'].map(kind) },
+  translations
+});
+const attachment = objectSchema({label, required: flag}, ['label']);
 const specification = objectSchema({
   title: plain(80), purpose: plain(300),
   blocks: { type: 'array', items: block, minItems: 1, maxItems: MAX_PAGE_FIELDS },
   actions: { type: 'array', items: action, minItems: 0, maxItems: 4 },
   fields: { type: 'array', items: inlineField, minItems: 1, maxItems: MAX_PAGE_FIELDS },
-  initial_values: initialValues
+  initial_values: initialValues,
+  appearance,
+  attachment
 }, ['title', 'purpose', 'blocks', 'actions']);
 const pageSchema = objectSchema({ specification, request_id: uuid }, ['specification', 'request_id']);
 
 const workPackageDefinition = objectSchema({
   label,
   fields: { type: 'array', items: inlineField, minItems: 1, maxItems: 64 },
-  list_columns: { type: 'array', items: reference, minItems: 1, maxItems: 64, uniqueItems: true }
+  list_columns: { type: 'array', items: reference, minItems: 1, maxItems: 64, uniqueItems: true },
+  appearance,
+  attachment
 }, ['label', 'fields']);
 
 export const tools = [
   { name:'describe_page_context', description:'查看当前范围内可用于编制页面的数据源、列、输入字段、已登记动作和可用的工作包。', inputSchema:objectSchema({}) },
-  { name:'open_work_package', description:'打开当前工作包的录入表单与记录列表。可为新的 package_ref 传入 definition，在当前授权范围内一次配置字段、校验与选项并出表。已有登记册直接按引用打开。', inputSchema:objectSchema({ package_ref: reference, definition: workPackageDefinition }, ['package_ref']) },
+  { name:'open_work_package', description:'打开当前工作包的录入表单与记录列表。可为新的 package_ref 传入 definition，在当前授权范围内一次配置字段、校验与选项并出表，可选 definition.appearance 和 definition.attachment。已有登记册直接按引用打开。', inputSchema:objectSchema({ package_ref: reference, definition: workPackageDefinition }, ['package_ref']) },
   { name:'get_work_package_record', description:'读取当前工作包的一条已保存记录，按工作包参数名返回类型化的值；声明为手机号或身份证的值仅返回掩码。', inputSchema:objectSchema({package_ref:reference,record_id:uuid}, ['package_ref','record_id']) },
-  { name:'generate_interaction_page', description:'按本轮对话组合本次页面，生成可供用户打开的网页。可在 specification.fields 传入本页字段、规则与下拉选项，输入区块通过 field_ref 引用，可用 specification.initial_values 按字段标识预填可修改的值。内联页可用 submit_response / page-submit 收集答复。业务动作及数据引用由宿主授权。重试沿用相同 request_id 与规格。', inputSchema:pageSchema },
+  { name:'generate_interaction_page', description:'按本轮对话组合本次页面，生成可供用户打开的网页。可在 specification.fields 传入本页字段、规则与下拉选项，输入区块通过 field_ref 引用，可用 specification.initial_values 按字段标识预填可修改的值。可选 appearance 选择主题、布局和界面语言，attachment 接收一张 PNG/JPEG。内联页可用 submit_response / page-submit 收集答复。业务动作及数据引用由宿主授权。重试沿用相同 request_id 与规格。', inputSchema:pageSchema },
   { name:'get_interaction_page', description:'按页面 ID 读取页面状态及访问链接。', inputSchema:objectSchema({page_id:uuid}, ['page_id']) },
   { name:'get_interaction_result', description:'按页面 ID 读取已记录的用户选择及提交值，手机号和身份证字段仅返回掩码。未提交时仅返回状态。', inputSchema:objectSchema({page_id:uuid}, ['page_id']) }
 ];
@@ -114,6 +130,8 @@ export function validToolArguments(name, args) {
 export function validPageSpecification(value) {
   return matches(specification, value);
 }
+export const validAttachmentSpec = value => matches(attachment, value);
+export const validPageAppearance = value => matches(appearance, value);
 export const validPageId = value => matches(uuid, value);
 export const validReference = value => matches(reference, value);
 export const validAction = value => matches(action, value);

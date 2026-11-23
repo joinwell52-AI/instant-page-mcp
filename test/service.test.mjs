@@ -238,7 +238,7 @@ test('一次性查询页随请求定义候选车牌，校验选择并在重启�
 
   const html = await (await fetch(page.url)).text();
   assert.match(html, /<select[^>]+name="field\.plate"[^>]+required/);
-  assert.deepEqual([...html.matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), plate.options);
+  assert.deepEqual([...html.split('<footer')[0].matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), plate.options);
   const form = {form_token:token(html), action:'page-submit'};
   assert.equal((await submit(site.base, page.page_id, form)).status, 400);
   assert.equal((await submit(site.base, page.page_id, {...form, 'field.plate':'苏A000000'})).status, 400);
@@ -317,4 +317,59 @@ test('一次性核对页预填可编辑字段，并按实际提交值生成回�
   const finalHtml = await (await fetch(page.url)).text();
   assert.match(finalHtml, /更正的所有人/);
   assert.doesNotMatch(finalHtml, /A&quot;|原件\n备注/);
+});
+
+test('带样式的图片核对页原子保存输入和原图，授权宿主可按页号取回', async t => {
+  const site = await setup(t);
+  const template = fixture('page-license-review.json');
+  const specification = {...template.specification, appearance:{theme:'blue',layout:'grid'},
+    attachment:{label:'识别原图',required:true}};
+  const args = {...template, specification};
+  const response = await site.api('generate',args);
+  assert.equal(response.status,200);
+  const page = await response.json();
+  const id = {page_id:page.page_id};
+  const html = await (await fetch(page.url)).text();
+  assert.match(html, /<main class="layout-grid">/);
+  assert.match(html, /background:#eef5fd/);
+  assert.match(html, /enctype="multipart\/form-data"/);
+  assert.match(html, /name="attachment" type="file"[^>]*required/);
+  const form_token = token(html);
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/1WQAAAAASUVORK5CYII=', 'base64');
+  const send = (file, filename='sample.png') => {
+    const body = new FormData();
+    body.set('form_token',form_token);
+    body.set('action','page-submit');
+    body.set('field.owner','已核对的示例所有人');
+    if (file) body.set('attachment',file,filename);
+    return fetch(site.base+'/p/'+page.page_id+'/submit',{
+      method:'POST', redirect:'manual', headers:{origin:site.base}, body
+    });
+  };
+  const missing = await send();
+  assert.equal(missing.status,400);
+  assert.match(await missing.text(), /请附上原图/);
+  const invalid = await send(new Blob(['fake'],{type:'image/png'}));
+  assert.equal(invalid.status,400);
+  assert.match(await invalid.text(), /PNG 或 JPEG/);
+  assert.equal((await site.api('attachment',id)).status,404);
+  const png = new Blob([image],{type:'image/png'});
+  assert.equal((await send(png)).status,303);
+  assert.equal((await send(png)).status,303);
+  assert.equal((await send(png,'different.png')).status,409);
+  const receipt = await (await site.api('result',id)).json();
+  assert.equal(receipt.state,'submitted');
+  assert.deepEqual(receipt.submission.values,{owner:'已核对的示例所有人'});
+  assert.equal(receipt.submission.attachment.filename,'sample.png');
+  assert.equal(receipt.submission.attachment.content_type,'image/png');
+  assert.equal(receipt.submission.attachment.size,image.length);
+  assert.match(receipt.submission.attachment.sha256,/^[0-9a-f]{64}$/);
+  assert.match(await (await fetch(page.url)).text(), /已保存图片附件：<\/span>sample\.png/);
+  assert.equal((await site.api('attachment',id,'Bearer invalid')).status,403);
+  await site.restart();
+  const original = await site.api('attachment',id);
+  assert.equal(original.status,200);
+  assert.equal(original.headers.get('content-disposition'),'attachment');
+  assert.deepEqual(Buffer.from(await original.arrayBuffer()),image);
+  assert.deepEqual(await (await site.api('result',id)).json(),receipt);
 });

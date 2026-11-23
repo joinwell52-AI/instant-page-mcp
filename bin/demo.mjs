@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // 本机演示使用包内合成数据，真实运行 MCP 协议，不需要 npm 安装。
-import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +9,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { createPageService } from '../src/service.mjs';
-
-const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+import { version } from '../src/version.mjs';
 
 const at = path => fileURLToPath(new URL(path,import.meta.url));
 const mode=process.argv[2];

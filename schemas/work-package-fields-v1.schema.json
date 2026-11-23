@@ -30,13 +30,106 @@
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/reference" }
     },
+    "appearance": {
+      "type": "object",
+      "properties": {
+        "theme": { "enum": ["default", "blue", "mono"], "default": "default" },
+        "layout": { "enum": ["stacked", "grid", "wide"], "default": "stacked" },
+        "locale": { "enum": ["zh-CN", "en"], "default": "zh-CN" },
+        "translations": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "object",
+              "properties": {
+                "zh-CN": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "zh-CN",
+                "en"
+              ],
+              "additionalProperties": false
+            },
+            "purpose": {
+              "type": "object",
+              "properties": {
+                "zh-CN": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "zh-CN",
+                "en"
+              ],
+              "additionalProperties": false
+            },
+            "fields": {
+              "type": "object",
+              "maxProperties": 64,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9_一-鿿][A-Za-z0-9_.一-鿿-]{0,127}$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "zh-CN": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "en": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "zh-CN",
+                  "en"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S" },
+        "required": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
     "work_package": {
       "type": "object",
       "required": ["label", "parameters"],
       "properties": {
         "label": { "$ref": "#/$defs/label" },
         "parameters": { "$ref": "#/$defs/reference_list" },
-        "list_columns": { "$ref": "#/$defs/reference_list" }
+        "list_columns": { "$ref": "#/$defs/reference_list" },
+        "appearance": { "$ref": "#/$defs/appearance" },
+        "attachment": { "$ref": "#/$defs/attachment" }
       },
       "additionalProperties": false
     },

@@ -2,9 +2,11 @@ import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { languageScriptHash, pageAppearance } from './appearance.mjs';
+import { MAX_IMAGE_BYTES, readImageForm } from './attachment.mjs';
 import { isObject, validAction, validPageId, validReference, validToolArguments } from './schema.mjs';
 import { displayFieldValue, isSensitiveField, validateFormAt } from './field-rules.mjs';
-import { UnknownReference, AnswerError, validateAnswer, renderPage, fieldDefinition, resolvePageFields, escape, styles } from './render.mjs';
+import { UnknownReference, AnswerError, validateAnswer, renderPage, fieldDefinition, resolvePageFields, escape, pageBrand, styles } from './render.mjs';
 import { PageError, PageStore, scopeKeys } from './store.mjs';
 import { createWorkPackagePages } from './work-package.mjs';
 
@@ -13,11 +15,14 @@ const apiRoutes = new Map([
   ['/v1/pages/context','describe_page_context'],
   ['/v1/work-packages/open','open_work_package'],
   ['/v1/work-packages/record','get_work_package_record'],
+  ['/v1/work-packages/attachment','get_work_package_record'],
   ['/v1/pages/generate','generate_interaction_page'],
   ['/v1/pages/read','get_interaction_page'],
   ['/v1/pages/result','get_interaction_result'],
+  ['/v1/pages/attachment','get_interaction_result'],
 ]);
-const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; script-src 'none'; form-action 'self'; frame-ancestors 'none'";
+const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; script-src '" +
+  languageScriptHash + "'; form-action 'self'; frame-ancestors 'none'";
 function sameSecret(value,expected) {
   const digest=s=>createHash('sha256').update(String(s)).digest();
   return timingSafeEqual(digest(value),digest(expected));
@@ -27,9 +32,8 @@ function json(res,status,value) {
   res.end(JSON.stringify(value));
 }
 function reject(code,message) { throw new PageError(code,message); }
-async function readBody(req, type) {
+async function readBytes(req, type, limit) {
   if ((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== type) reject(415,'wrong_content_type');
-  const limit = type === 'application/x-www-form-urlencoded' ? 2 * 1024 * 1024 : 256 * 1024;
   if (Number(req.headers['content-length']) > limit) reject(413,'content_too_large');
   const chunks=[];
   let size=0;
@@ -38,8 +42,51 @@ async function readBody(req, type) {
     if (size>limit) reject(413,'content_too_large');
     chunks.push(chunk);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
+async function readBody(req, type) {
+  const limit = type === 'application/x-www-form-urlencoded' ? 2 * 1024 * 1024 : 256 * 1024;
+  return (await readBytes(req, type, limit)).toString('utf8');
+}
+async function readSubmission(req, attachment, formUrl, appearance) {
+  if (!attachment) return {form: new URLSearchParams(await readBody(req, 'application/x-www-form-urlencoded'))};
+  const bytes = await readBytes(req, 'multipart/form-data', MAX_IMAGE_BYTES + 256 * 1024);
+  try {
+    return await readImageForm(bytes, req.headers['content-type'], attachment);
+  } catch (error) {
+    if (error instanceof AnswerError) {
+      error.formUrl = formUrl;
+      error.appearance = appearance;
+    }
+    throw error;
+  }
+}
+function sendAttachment(res, metadata, image) {
+  res.writeHead(200, {...privateHeaders, 'content-type':metadata.content_type,
+    'content-disposition':'attachment', 'content-length':image.length});
+  res.end(image);
+}
+const answerErrorsEn = new Map([
+  ['id_shape','Enter 18 characters. The last character can be X.'],
+  ['id_birth_date','The date of birth in the ID number is invalid.'],
+  ['id_checksum','The ID number check digit does not match.'],
+  ['phone_format','Enter an 11-digit mainland China mobile number. The +86 prefix is optional.'],
+  ['invalid_type','Enter a text value.'],
+  ['required','Fill in this required field.'],
+  ['text_format','Enter text in the expected format.'],
+  ['text_length','The text length is outside the allowed range.'],
+  ['invalid_choice','This option is no longer available.'],
+  ['number_format','Enter a valid number.'],
+  ['number_range','The number is outside the allowed range.'],
+  ['date_format','Enter a valid date.'],
+  ['date_range','The date is outside the allowed range.'],
+  ['invalid_multipart','The image upload format is invalid.'],
+  ['invalid_attachment','Attach only one image.'],
+  ['attachment_required','Attach the original image.'],
+  ['attachment_too_large','The image must be at most 10 MiB.'],
+  ['invalid_attachment_type','Select a PNG or JPEG image.']
+]);
+
 function formFeedback(req, res, error) {
   const wantsJson = (req.headers.accept ?? '').split(',').some(range => {
     const [media, ...params] = range.toLowerCase().trim().split(';');
@@ -48,13 +95,19 @@ function formFeedback(req, res, error) {
   if (wantsJson || !error.formUrl) {
     return json(res, 400, { code: 'invalid_answer', reason: error.code, field_ref: error.fieldRef });
   }
-  const field = error.fieldLabel ? '<strong>' + escape(error.fieldLabel) + '</strong>：' : '';
+  const presentation = pageAppearance(error.appearance);
+  const {lang,text,markup} = presentation;
+  const title = text('请检查填写内容','Check your entries');
+  const message = markup(error.message, answerErrorsEn.get(error.code) ?? 'Check the submitted fields and action.');
+  const field = error.fieldLabel ? '<strong>' + escape(error.fieldLabel) + '</strong>' + text('：',': ') : '';
   res.writeHead(400, { ...privateHeaders, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp });
-  res.end('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>请检查填写内容</title>' +
-    '<style>' + styles + '</style></head><body><main><h1>请检查填写内容</h1>' +
-    '<p role="alert">' + field + escape(error.message) + '</p><p>请使用浏览器返回键修改，或重新打开表单。</p>' +
-    '<a href="' + escape(error.formUrl) + '">重新打开表单</a></main></body></html>');
+  res.end('<!doctype html><html lang="' + lang + '"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title>' +
+    '<style>' + styles + presentation.css + '</style></head><body><main' + presentation.mainAttributes + '><h1>' + markup('请检查填写内容','Check your entries') + '</h1>' +
+    '<p role="alert">' + field + message + '</p><p>' +
+    markup('请使用浏览器返回键修改，或重新打开表单。','Go back in your browser or reopen the form.') + '</p>' +
+    '<a href="' + escape(error.formUrl) + '">' + markup('重新打开表单','Reopen form') + '</a>' +
+    pageBrand(presentation) + '</main></body></html>');
 }
 function errors(req,res,error) {
   if (res.headersSent) { res.destroy(); return; }
@@ -113,7 +166,7 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     if(typeof req.url!=='string'||!req.url.startsWith('/')||req.url.startsWith('//')) reject(404,'not_found');
     const u = new URL(req.url,origin);
     if (u.origin!==origin) reject(404,'not_found');
-    if (packages.matches(u.pathname)) return packages.handle(req,res,{origin,authenticate,readBody,headers:privateHeaders,csp});
+    if (packages.matches(u.pathname)) return packages.handle(req,res,{origin,authenticate,readSubmission,headers:privateHeaders,csp});
     const parsed = /^\/p\/([a-f0-9-]+)(\/submit)?$/i.exec(u.pathname);
     if(!parsed||!validPageId(parsed[1])) reject(404,'not_found');
     const submit=Boolean(parsed[2]);
@@ -143,11 +196,12 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     }
     if(req.headers.origin!==origin) reject(403,'origin_denied');
     store.assertBrowserLinkActive(page);
-    const form=new URLSearchParams(await readBody(req,'application/x-www-form-urlencoded'));
-    if(form.getAll('form_token').length!==1||!sameSecret(form.get('form_token'),page.data.formToken)) reject(403,'invalid_form');
+    const {specification} = page.data;
     const formUrl=authenticate ? pagePath(page) : localUrl(page);
-    const answer=validateFormAt(formUrl, () => validateAnswer(page.data.specification,store.registry,form));
-    const settled=store.submit(page,answer);
+    const {form, upload} = await readSubmission(req, specification.attachment, formUrl, specification.appearance);
+    if(form.getAll('form_token').length!==1||!sameSecret(form.get('form_token'),page.data.formToken)) reject(403,'invalid_form');
+    const answer=validateFormAt(formUrl, () => validateAnswer(specification,store.registry,form), specification.appearance);
+    const settled=store.submit(page,answer,upload);
     res.writeHead(303,{...privateHeaders,location:authenticate?pagePath(settled):localUrl(settled)});
     res.end();
   }
@@ -168,6 +222,10 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     if (req.url==='/v1/work-packages/record') {
       return json(res,200,packages.getRecord(args.package_ref,args.record_id));
     }
+    if (req.url==='/v1/work-packages/attachment') {
+      const {metadata,image} = packages.getAttachment(args.package_ref,args.record_id);
+      return sendAttachment(res,metadata,image);
+    }
     if (req.url==='/v1/work-packages/open') {
       const {package_ref,title,form_path,list_path,access_key}=packages.open(args.package_ref,args.definition);
       const link=path=>{
@@ -178,6 +236,10 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
       return json(res,200,{package_ref,title,form_url:link(form_path),list_url:link(list_path)});
     }
     const page=req.url==='/v1/pages/generate' ? store.generate(args) : store.get(args.page_id);
+    if (req.url === '/v1/pages/attachment') {
+      const image = store.attachment(page);
+      return sendAttachment(res,page.submission.attachment,image);
+    }
     const response={page_id:page.data.page_id,state:page.state};
     if(req.url==='/v1/pages/result') {
       if (page.submission) {

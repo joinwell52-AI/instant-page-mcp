@@ -1,4 +1,6 @@
+import { escape, pageAppearance } from './appearance.mjs';
 import { validPageSpecification } from './schema.mjs';
+import { version } from './version.mjs';
 import { AnswerError, UnknownReference, validateFieldDefinition, normalizeFieldInput as cleanValue, readSubmittedField, displayFieldValue } from './field-rules.mjs';
 
 export { AnswerError, UnknownReference };
@@ -9,8 +11,11 @@ const hasLabel = v => typeof v === 'string' && v.trim() !== '';
 const scalar = v => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
 const pageSubmit = { reference: 'page-submit', kind: 'submit_response', label: '提交' };
 const columnName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const escape = value => String(value).replace(/[&<>"']/g, ch =>
-  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
+export function pageBrand(presentation) {
+  return '<footer class="ipm-brand">'+presentation.menu+'<div>'+
+    presentation.markup('即页 · IPM','Instant Page MCP · IPM')+' <span>v'+escape(version)+'</span></div></footer>'+
+    presentation.script;
+}
 
 function lookup(registry, group, ref) {
   if (!object(registry?.[group]) || !own(registry[group], ref)) throw new UnknownReference('页面引用在当前上下文不可用。');
@@ -66,12 +71,13 @@ function resolve(spec, registry) {
     return { ...b, source, cols };
   });
   for (const a of spec.actions) {
-    const usePageSubmit = spec.fields?.length > 0 && a.reference === pageSubmit.reference &&
+    const usePageSubmit = (spec.fields?.length > 0 || spec.attachment) && a.reference === pageSubmit.reference &&
       !own(registry?.actions, a.reference);
     const source = usePageSubmit ? pageSubmit : lookup(registry,'actions',a.reference);
     if (source.kind !== a.kind || actions.has(a.reference)) throw new UnknownReference('页面操作未授权或重复。');
     actions.set(a.reference,source);
   }
+  if (spec.attachment && !actions.size) throw new UnknownReference('图片附件需要一个提交动作。');
   return { blocks, fields, actions };
 }
 
@@ -107,18 +113,22 @@ function pageInitialValues(spec, fields) {
   return values;
 }
 
-function inputHtml(f,ref,id,locked,value) {
-  const label = '<label for="'+id+'">'+escape(f.label)+(f.required?' <small>必填</small>':'')+'</label>';
-  if (locked) return label+'<output id="'+id+'">'+escape(displayFieldValue(f, value) ?? '未填写')+'</output>';
+function inputHtml(f,ref,id,locked,value,presentation=pageAppearance()) {
+  const {text,markup,placeholder} = presentation;
+  const label = '<label for="'+id+'">'+presentation.fieldLabel(ref,f.label)+(f.required?' <small>'+markup('必填','Required')+'</small>':'')+'</label>';
+  if (locked) {
+    const saved = displayFieldValue(f,value);
+    return label+'<output id="'+id+'">'+(saved == null ? markup('未填写','Not provided') : escape(saved))+'</output>';
+  }
   const attrs = ' id="'+id+'" name="field.'+escape(ref)+'"'+(f.required?' required':'');
   const valueAttr = value === undefined ? '' : ' value="'+escape(value)+'"';
-  if (f.type === 'select') return label+'<select'+attrs+'><option value="">请选择</option>'+
+  if (f.type === 'select') return label+'<select'+attrs+'><option value=""'+presentation.label('请选择','Select an option')+'>'+text('请选择','Select an option')+'</option>'+
     f.options.map(x=>'<option value="'+escape(x)+'"'+(x===value?' selected':'')+'>'+escape(x)+'</option>').join('')+'</select>';
   if (f.format === 'cn_mobile') {
-    return label+'<input'+attrs+' type="tel" inputmode="tel" autocomplete="tel" maxlength="17" placeholder="11 位手机号，可带 +86"'+valueAttr+'>';
+    return label+'<input'+attrs+' type="tel" inputmode="tel" autocomplete="tel" maxlength="17"'+placeholder('11 位手机号，可带 +86','11-digit mobile number, +86 optional')+valueAttr+'>';
   }
   if (f.format === 'cn_resident_id') {
-    return label+'<input'+attrs+' type="text" inputmode="text" autocapitalize="characters" spellcheck="false" autocomplete="off" minlength="18" maxlength="18" pattern="[0-9]{17}[0-9Xx]" placeholder="18 位，末位可以是 X"'+valueAttr+'>';
+    return label+'<input'+attrs+' type="text" inputmode="text" autocapitalize="characters" spellcheck="false" autocomplete="off" minlength="18" maxlength="18" pattern="[0-9]{17}[0-9Xx]"'+placeholder('18 位，末位可以是 X','18 characters, final X allowed')+valueAttr+'>';
   }
   const attr = (key, val) => val === undefined ? '' : ' '+key+'="'+escape(val)+'"';
   if (f.type === 'textarea' || f.type === 'text') {
@@ -134,34 +144,51 @@ function inputHtml(f,ref,id,locked,value) {
 const styles = `
 :root{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#183632;background:#eef3f0;color-scheme:light}*{box-sizing:border-box}body{margin:0;line-height:1.6}
 main{max-width:52rem;margin:2rem auto;padding:clamp(1.2rem,5vw,3rem);background:white;border:1px solid #d1ded7;border-radius:1rem}h1{font-size:clamp(1.6rem,5vw,2.25rem);line-height:1.3;margin:0}h2{font-size:1.08rem;margin:0 0 .65rem}
-header{border-bottom:2px solid #37755d;padding-bottom:1rem}header p{margin:.65rem 0 0;color:#435f54}section{margin:1.35rem 0}p,dt,dd,td,th,output,h1,h2,label{overflow-wrap:anywhere}.note,output,dd{white-space:pre-wrap}.note,.receipt{background:#edf6ee;border-left:3px solid #367559;padding:.8rem 1rem}
+header{border-bottom:2px solid #37755d;padding-bottom:1rem}header p{margin:.65rem 0 0;color:#435f54}.ipm-brand{display:flex;justify-content:flex-end;flex-wrap:wrap;align-items:baseline;gap:.45rem;margin-top:1.6rem;font-size:.875rem;font-weight:650;text-align:right}.ipm-brand span{font-weight:400}.ipm-language{display:flex;align-items:center;gap:.4rem;margin-right:.3rem}.ipm-language select{width:auto;margin:0;padding:.2rem .4rem}section{margin:1.35rem 0}p,dt,dd,td,th,output,h1,h2,label{overflow-wrap:anywhere}.note,output,dd{white-space:pre-wrap}.note,.receipt{background:#edf6ee;border-left:3px solid #367559;padding:.8rem 1rem}
 dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:.6rem;margin:0}dl div{background:#f1f5f2;padding:.6rem .8rem;border-radius:.45rem}dt,small{color:#50685c;font-size:.86rem}dd{margin:.1rem 0 0;font-weight:650}
 .scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:.5rem .65rem;border-bottom:1px solid #dce6e0}th{background:#f2f6f3}
 input,textarea,select,button{font:inherit}input,textarea,select,output{display:block;width:100%;max-width:100%;margin-top:.35rem;padding:.55rem .7rem;border:1px solid #9cafa2;border-radius:.4rem;background:white;color:inherit}label{display:block;font-weight:650}small{font-weight:400}textarea{resize:vertical}
 .buttons{display:flex;flex-wrap:wrap;gap:.6rem}button{background:#245e46;color:#fff;border:0;padding:.6rem 1rem;border-radius:.5rem;cursor:pointer}:focus-visible{outline:3px solid #b47e1b;outline-offset:2px}.receipt{margin:.85rem 0 0}
 @media(max-width:600px){main{min-height:100vh;margin:0;border:0;border-radius:0}td,th{padding:.48rem .4rem}} `;
 
+export function imageAttachmentInput(attachment,presentation) {
+  const {markup} = presentation;
+  if (!attachment) return '';
+  return '<section><label for="attachment">'+escape(attachment.label)+
+    (attachment.required?' <small>'+markup('必填','Required')+'</small>':'')+'</label><input id="attachment" name="attachment" type="file"'+
+    ' accept="image/png,image/jpeg"'+(attachment.required?' required':'')+'><small>'+markup('PNG 或 JPEG，最多 10 MiB','PNG or JPEG, up to 10 MiB')+'</small></section>';
+}
+
 export function renderPage(spec, registry, options = {}) {
   const { blocks, fields, actions } = resolve(spec,registry);
   const { pageId, state, formToken, submission }=options;
   const initial = state === 'submitted' ? new Map() : pageInitialValues(spec, fields);
   const submitted=state==='submitted', interactive=!submitted && actions.size > 0 && typeof formToken==='string' && formToken.length>0 && typeof pageId==='string' && pageId.length>0;
+  const presentation = pageAppearance(spec.appearance);
+  const {markup,lang} = presentation;
+  const title = spec.appearance?.translations?.title?.[lang] ?? spec.title;
+  const fieldSection = presentation.grid ? '<section class="field">' : '<section>';
   const content=blocks.map((b,i)=>{
     if (b.kind === 'narrative') return '<section><p class="note">'+escape(b.text)+'</p></section>';
     const s=b.source;
     if (b.kind === 'input') {
       const value = submitted ? (own(submission?.values,b.field_ref) ? submission.values[b.field_ref] : undefined) : initial.get(b.field_ref);
-      return '<section>'+inputHtml(s,b.field_ref,'f'+i,!interactive,value)+'</section>';
+      return fieldSection+inputHtml(s,b.field_ref,'f'+i,!interactive,value,presentation)+'</section>';
     }
     const start='<section><h2>'+escape(s.label)+'</h2>';
     if (b.kind === 'facts') return start+'<dl>'+s.items.map(v=>'<div><dt>'+escape(v.label)+'</dt><dd>'+escape(v.value)+'</dd></div>').join('')+'</dl></section>';
     return start+'<div class="scroll"><table><thead><tr>'+b.cols.map(k=>'<th scope="col">'+escape(s.columns[k])+'</th>').join('')+'</tr></thead><tbody>'+
       s.rows.map(r=>'<tr>'+b.cols.map(k=>'<td>'+escape(own(r,k)?r[k]??'—':'—')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></section>';
   }).join('');
-  const buttonHtml=[...actions].map(([ref,a])=>'<button type="submit" name="action" value="'+escape(ref)+'">'+escape(a.label)+'</button>').join('');
-  const body=interactive?'<form method="post" action="/p/'+escape(encodeURIComponent(pageId))+'/submit"><input type="hidden" name="form_token" value="'+escape(formToken)+'">'+content+'<div class="buttons">'+buttonHtml+'</div></form>':content;
-  const receipt=submitted?'<p class="receipt" role="status">已记录你的选择'+(actions.has(submission?.reference)?' · '+escape(actions.get(submission.reference).label):'')+'</p>':'';
-  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>'+escape(spec.title)+'</title><style>'+styles+'</style></head><body><main><header><h1>'+escape(spec.title)+'</h1><p>'+escape(spec.purpose)+'</p></header>'+receipt+body+'</main></body></html>';
+  const actionLabel = value => value === pageSubmit ? markup('提交','Submit') : escape(value.label);
+  const buttonHtml=[...actions].map(([ref,a])=>'<button type="submit" name="action" value="'+escape(ref)+'">'+actionLabel(a)+'</button>').join('');
+  const upload = spec.attachment;
+  const attachmentField = imageAttachmentInput(upload,presentation);
+  const body=interactive?'<form method="post" action="/p/'+escape(encodeURIComponent(pageId))+'/submit"'+(upload?' enctype="multipart/form-data"':'')+'><input type="hidden" name="form_token" value="'+escape(formToken)+'">'+content+attachmentField+'<div class="buttons">'+buttonHtml+'</div></form>':
+    (presentation.grid ? '<div class="page-content">'+content+'</div>' : content);
+  const receipt=submitted?'<p class="receipt" role="status">'+markup('已记录你的选择','Your response was saved')+(actions.has(submission?.reference)?' · '+actionLabel(actions.get(submission.reference)):'')+'</p>':'';
+  const attached = submitted && submission?.attachment ? '<p>'+markup('已保存图片附件：','Image saved: ')+escape(submission.attachment.filename)+'</p>' : '';
+  return '<!doctype html><html lang="'+lang+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><title>'+escape(title)+'</title><style>'+styles+presentation.css+'</style></head><body><main'+presentation.mainAttributes+'><header><h1>'+presentation.title(spec.title)+'</h1><p>'+presentation.purpose(spec.purpose)+'</p></header>'+receipt+body+attached+pageBrand(presentation)+'</main></body></html>';
 }
 
 export { fieldDefinition, inputHtml, cleanValue, escape, styles };

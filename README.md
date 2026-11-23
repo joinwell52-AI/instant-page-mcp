@@ -1,5 +1,7 @@
 # 即页 · 即时交互页面生成器 MCP
 
+**简体中文** · [English](README.en.md)
+
 即页（Instant Page MCP，简称 IPM）把数字员工手头这一项任务变成一张能查看、填写或确认的网页。日常问答留在聊天里。需要人录入资料、核对图片识别结果、从查询结果里选条件，或在 ERP 缺少现成列表时展示明细，数字员工可以用一次 MCP 调用出页，再用记录号或页号把提交接回原任务。
 
 宿主提供已授权的数据、字段规则和业务动作。即页负责渲染、校验、保存与回读。图片识别、ERP 查询、正式审批和业务写入由宿主或接入系统执行。核心可独立安装，CodeFlowMu、微信桥和 Codex 都是可选接入方。
@@ -49,6 +51,42 @@
 [可直接调用的行驶证核对页请求（合成数据）](examples/page-license-review.json)
 
 一次性表单可用 `{"kind":"submit_response","reference":"page-submit"}` 收集答复。正式业务动作由宿主授权。
+
+## 可选主题、布局与原图附件
+
+一次性页面用 `specification.appearance`，新登记册用 `definition.appearance`。宿主预定义的登记册也可以在授权目录的 `work_packages[ref].appearance` 配置。配色、布局和界面语言可独立选择。
+
+| 设置 | 选项 | 适合 |
+| --- | --- | --- |
+| `theme` | `default`、`blue`、`mono` | 现有绿色样式、蓝色、灰阶 |
+| `layout` | `stacked`、`grid`、`wide` | 逐项录入、短字段较多的核对页、列较多的表格 |
+| `locale` | `zh-CN`、`en` | 页面初始显示语言 |
+
+用户可在页面右下角用「语言」下拉框切换简体中文或英文，切换会保留当前表单输入和附件。即页内置按钮和提示随语言切换。要切换任务标题、说明和字段名，可以用 `appearance.translations` 提供对应的 `zh-CN` 和 `en` 文本。右下角同时显示即页标记和版本。
+
+```json
+{
+  "locale": "zh-CN",
+  "translations": {
+    "title": {"zh-CN":"信息录入","en":"Information form"},
+    "fields": {"name":{"zh-CN":"名称","en":"Name"}}
+  }
+}
+```
+
+`grid` 在宽屏上将输入字段排成两列，在窄屏上回到单列。省略配置时保持现有样式。
+
+需要原图随字段提交时，可在 `generate_interaction_page` 的 `specification` 中加入下面两项。其余字段定义、预填和提交动作照常传入。
+
+```json
+{
+  "appearance": {"theme":"blue","layout":"grid"},
+  "attachment": {"label":"原始图片","required":true}
+}
+```
+
+登记表把同样的附件配置放进 `definition.attachment`。页面接受一张 PNG 或 JPEG，大小最多 10 MiB。`get_interaction_result` 返回最终字段值及 `submission.attachment` 中的文件名、MIME 类型、字节数和 SHA-256。授权宿主可向本机页面服务 `POST /v1/pages/attachment`，传 `{"page_id":"…"}` 并使用与 MCP 相同的 Bearer 能力凭据，取回原始字节。登记记录的附件元数据由 `get_work_package_record` 返回。取回其原图时，用 `POST /v1/work-packages/attachment` 接收同一份 `{package_ref, record_id}`。
+
 
 ## 本机安装与接入
 

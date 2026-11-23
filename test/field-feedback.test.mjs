@@ -56,7 +56,7 @@ for (const mode of ['工作包表单','一次性交互表单']) {
     assert.ok(!feedback.includes(label));
     assert.ok(!feedback.includes(invalidValue));
     assert.ok(feedback.includes('11 位中国大陆手机号码'));
-    const retry = /href="([^"]+)">重新打开表单<\/a>/.exec(feedback)[1].replaceAll('&amp;', '&');
+    const retry = /href="([^"]+)"><span[^>]*>重新打开表单<\/span><\/a>/.exec(feedback)[1].replaceAll('&amp;', '&');
     assert.equal((await fetch(new URL(retry,base))).status, 200);
 
     const json = await post(invalidValue, 'application/json');

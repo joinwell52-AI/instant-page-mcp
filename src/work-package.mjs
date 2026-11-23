@@ -1,11 +1,12 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pageAppearance } from './appearance.mjs';
 import { validateFieldContract } from './field-contract.mjs';
 import { displayFieldValue, isSensitiveField, readSubmittedField, validateFormAt } from './field-rules.mjs';
-import { AnswerError, escape, fieldDefinition, inputHtml, styles } from './render.mjs';
-import { isObject, validPageId, validReference } from './schema.mjs';
-import { PageError, scopeKeys } from './store.mjs';
+import { AnswerError, escape, fieldDefinition, imageAttachmentInput, inputHtml, pageBrand, styles } from './render.mjs';
+import { isObject, validAttachmentSpec, validPageAppearance, validPageId, validReference } from './schema.mjs';
+import { PageError, publishDirectory, scopeKeys } from './store.mjs';
 
 const directoryMode = { recursive: true, mode: 0o700 };
 const own = (obj, key) => Object.hasOwn(obj, key);
@@ -64,7 +65,14 @@ function specification(registry, reference) {
       !columns.every(ref => fields.has(ref)) || new Set(columns).size !== columns.length) {
     throw new PageError(503, 'invalid_work_package_columns');
   }
-  return { title: definition.label, fields, columns };
+  if (definition.appearance !== undefined && !validPageAppearance(definition.appearance)) {
+    throw new PageError(503, 'invalid_work_package_appearance');
+  }
+  if (definition.attachment !== undefined && !validAttachmentSpec(definition.attachment)) {
+    throw new PageError(503, 'invalid_work_package_attachment');
+  }
+  return { title: definition.label, fields, columns, appearance: definition.appearance,
+    attachment: definition.attachment };
 }
 
 // Access keys and routes belong to the current snapshot. Rows belong to an authorized
@@ -109,26 +117,34 @@ function parseValues(fields, form) {
   return Object.fromEntries(result);
 }
 
-function document(title, heading, links, body) {
-  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escape(title) +
+function document(title, suffix, links, body, presentation) {
+  const {lang,text,markup} = presentation;
+  const browserTitle = presentation.titleText(title) + ' · ' + text(...suffix);
+  const heading = presentation.title(title) + ' · ' + markup(...suffix);
+  return '<!doctype html><html lang="' + lang + '"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escape(browserTitle) +
     '</title><style>' + styles + ' nav{display:flex;gap:1.1rem;margin-top:.8rem}' +
-    ' a{color:#235e49}caption{text-align:left;padding:.7rem 0}time{white-space:nowrap}' +
-    '</style></head><body><main><header><h1>' + escape(heading) + '</h1><nav>' + links +
-    '</nav></header>' + body + '</main></body></html>';
+    ' a{color:#235e49}caption{text-align:left;padding:.7rem 0}time{white-space:nowrap}' + presentation.css +
+    '</style></head><body><main' + presentation.mainAttributes + '><header><h1>' + heading + '</h1><nav>' + links +
+    '</nav></header>' + body + pageBrand(presentation) + '</main></body></html>';
 }
 
 function anchor(url, label) {
-  return '<a href="' + escape(url) + '">' + escape(label) + '</a>';
+  return '<a href="' + escape(url) + '">' + label + '</a>';
 }
 
 function parametersForm(pkg, formUrl, listUrl, token) {
+  const presentation = pageAppearance(pkg.appearance);
+  const {markup} = presentation;
+  const section = presentation.grid ? '<section class="field">' : '<section>';
   const fields = Array.from(pkg.fields, ([ref, field], index) =>
-    '<section>' + inputHtml(field, ref, 'f' + index, false) + '</section>').join('');
-  const body = '<form action="' + escape(formUrl) + '" method="post">' +
+    section + inputHtml(field, ref, 'f' + index, false, undefined, presentation) + '</section>').join('');
+  const encoding = pkg.attachment ? ' enctype="multipart/form-data"' : '';
+  const body = '<form action="' + escape(formUrl) + '" method="post"' + encoding + '>' +
     '<input type="hidden" name="form_token" value="' + escape(token) + '">' + fields +
-    '<button type="submit">保存记录</button></form>';
-  return document(pkg.title + ' · 参数录入', pkg.title + ' · 参数录入', anchor(listUrl, '查看记录列表'), body);
+    imageAttachmentInput(pkg.attachment,presentation) +
+    '<button type="submit">' + markup('保存记录','Save record') + '</button></form>';
+  return document(pkg.title, ['参数录入','Data entry'], anchor(listUrl, markup('查看记录列表','View records')), body, presentation);
 }
 
 function valueOf(row, ref, field) {
@@ -141,33 +157,43 @@ function submittedTime(row) {
 }
 
 function recordsList(pkg, rows, link) {
-  const newRecord = anchor(link('/form'), '新增录入');
-  let content = '<p>暂无录入记录。</p>';
+  const presentation = pageAppearance(pkg.appearance);
+  const {markup} = presentation;
+  const newRecord = anchor(link('/form'), markup('新增录入','Add record'));
+  let content = '<p>' + markup('暂无录入记录。','No records yet.') + '</p>';
   if (rows.length) {
-    const headings = pkg.columns.map(ref => '<th scope="col">' + escape(pkg.fields.get(ref).label) + '</th>').join('');
+    const headings = pkg.columns.map(ref => '<th scope="col">' + presentation.fieldLabel(ref,pkg.fields.get(ref).label) + '</th>').join('');
     const body = rows.map(row => {
       const cells = pkg.columns.map(ref => '<td>' + escape(valueOf(row, ref, pkg.fields.get(ref))) + '</td>').join('');
       return '<tr><td>' + submittedTime(row) + '</td>' + cells + '<td>' +
-        anchor(link('/records/' + row.record_id), '查看详情') + '</td></tr>';
+        anchor(link('/records/' + row.record_id), markup('查看详情','View details')) + '</td></tr>';
     }).join('');
-    content = '<div class="scroll"><table><caption>共 ' + rows.length + ' 条记录</caption>' +
-      '<thead><tr><th scope="col">录入时间</th>' + headings + '<th scope="col">详情</th></tr></thead>' +
+    content = '<div class="scroll"><table><caption>' + markup('共 ' + rows.length + ' 条记录','Records: ' + rows.length) + '</caption>' +
+      '<thead><tr><th scope="col">' + markup('录入时间','Submitted at') + '</th>' + headings +
+      '<th scope="col">' + markup('详情','Details') + '</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table></div>';
   }
-  return document(pkg.title + ' · 记录列表', pkg.title + ' · 记录列表', newRecord, content);
+  return document(pkg.title, ['记录列表','Records'], newRecord, content, presentation);
 }
 
 function recordDetail(pkg, row, link) {
+  const presentation = pageAppearance(pkg.appearance);
+  const {markup} = presentation;
   const fields = Array.from(pkg.fields, ([ref, field]) =>
-    '<div><dt>' + escape(field.label) + '</dt><dd>' + escape(valueOf(row, ref, field)) + '</dd></div>').join('');
-  const content = '<section><p>录入时间 ' + submittedTime(row) + '</p><dl>' + fields + '</dl></section>';
-  return document(pkg.title + ' · 记录详情', pkg.title + ' · 记录详情',
-    anchor(link('/records'), '返回列表') + anchor(link('/form'), '新增录入'), content);
+    '<div><dt>' + presentation.fieldLabel(ref,field.label) + '</dt><dd>' + escape(valueOf(row, ref, field)) + '</dd></div>').join('');
+  const attachment = row.attachment ? '<p>' + markup('已保存图片附件：','Image saved: ') + escape(row.attachment.filename) + '</p>' : '';
+  const content = '<section><p>' + markup('录入时间','Submitted at') + ' ' + submittedTime(row) +
+    '</p><dl>' + fields + '</dl>' + attachment + '</section>';
+  return document(pkg.title, ['记录详情','Record details'], anchor(link('/records'), markup('返回列表','Back to records')) +
+    anchor(link('/form'), markup('新增录入','Add record')), content, presentation);
 }
+
 
 function readRecord(directory, recordId) {
   try {
-    return JSON.parse(readFileSync(join(directory, recordId + '.json'), 'utf8'));
+    const folder = join(directory, recordId);
+    const file = existsSync(folder) ? join(folder, 'record.json') : join(directory, recordId + '.json');
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') throw new PageError(404, 'record_not_found');
     throw error;
@@ -175,20 +201,23 @@ function readRecord(directory, recordId) {
 }
 
 function readRecords(directory) {
-  return readdirSync(directory)
-    .filter(name => name.endsWith('.json') && validPageId(name.slice(0, -5)))
-    .map(name => readRecord(directory, name.slice(0, -5)))
+  const ids = new Set(readdirSync(directory, {withFileTypes:true})
+    .map(entry => entry.isDirectory() ? entry.name : entry.name.endsWith('.json') ? entry.name.slice(0,-5) : '')
+    .filter(validPageId));
+  return Array.from(ids, id => readRecord(directory, id))
     .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at) || b.order.localeCompare(a.order) ||
       b.record_id.localeCompare(a.record_id));
 }
 
-function inlineRegistry(reference, {label, fields, list_columns}) {
+function inlineRegistry(reference, {label, fields, list_columns, appearance, attachment}) {
   return {
     field_spec_version: '1.0',
     fields: Object.fromEntries(fields.map(({ref, ...field}) => [ref, field])),
     work_packages: {
       [reference]: {label, parameters: fields.map(({ref}) => ref),
-        ...(list_columns === undefined ? {} : {list_columns})}
+        ...(list_columns === undefined ? {} : {list_columns}),
+        ...(appearance === undefined ? {} : {appearance}),
+        ...(attachment === undefined ? {} : {attachment})}
     }
   };
 }
@@ -261,18 +290,29 @@ export function createWorkPackagePages(store) {
       list_path: root + '/records', access_key: pkg.access };
   }
 
-  function getRecord(ref, recordId) {
+  function findRecord(ref, recordId) {
     if (!validPageId(recordId)) throw new PageError(404, 'record_not_found');
     const pkg = prepare(packageId(store.contextDigest, ref));
-    const row = readRecord(pkg.directory, recordId.toLowerCase());
+    return {pkg, row: readRecord(pkg.directory, recordId.toLowerCase())};
+  }
+
+  function getRecord(ref, recordId) {
+    const {pkg,row} = findRecord(ref, recordId);
     const visible = [];
     for (const [key, field] of pkg.fields) {
       if (own(row.values, key)) visible.push([key, displayFieldValue(field, row.values[key])]);
     }
-    return { package_ref: ref, record_id: row.record_id, values: Object.fromEntries(visible) };
+    return { package_ref: ref, record_id: row.record_id, values: Object.fromEntries(visible),
+      ...(row.attachment ? {attachment:row.attachment} : {}) };
   }
 
-  async function handle(req, res, {origin, authenticate, readBody, headers, csp}) {
+  function getAttachment(ref, recordId) {
+    const {pkg,row} = findRecord(ref, recordId);
+    if (!row.attachment) throw new PageError(404, 'attachment_not_found');
+    return {metadata:row.attachment, image:readFileSync(join(pkg.directory, row.record_id, 'attached-image'))};
+  }
+
+  async function handle(req, res, {origin, authenticate, readSubmission, headers, csp}) {
     if (!req.url?.startsWith('/') || req.url.startsWith('//')) throw new PageError(404, 'not_found');
     const url = new URL(req.url, origin);
     const route = /^\/w\/([a-f0-9-]+)\/(form|records)(?:\/([a-f0-9-]+))?$/.exec(url.pathname);
@@ -296,18 +336,29 @@ export function createWorkPackagePages(store) {
     const signature = id => hmac(pkg.key, JSON.stringify(['submission', audience, id]));
     if (req.method === 'POST') {
       if (req.headers.origin !== origin) throw new PageError(403, 'origin_denied');
-      const form = new URLSearchParams(await readBody(req, 'application/x-www-form-urlencoded'));
+      const {form,upload} = await readSubmission(req, pkg.attachment, link('/form'), pkg.appearance);
       const token = form.get('form_token') ?? '';
       const [id, sig] = token.split('.');
       if (form.getAll('form_token').length !== 1 || token !== id + '.' + sig ||
           !validPageId(id) || !sameSecret(sig, signature(id))) throw new PageError(403, 'invalid_form');
-      const values = validateFormAt(link('/form'), () => parseValues(pkg.fields, form));
+      const values = validateFormAt(link('/form'), () => parseValues(pkg.fields, form), pkg.appearance);
       store.current();
       const row = { record_id: id, submitted_at: new Date().toISOString(),
-        order: process.hrtime.bigint().toString().padStart(24, '0'), values };
-      if (!publishOnce(pkg.directory, id + '.json', JSON.stringify(row))) {
+        order: process.hrtime.bigint().toString().padStart(24, '0'), values,
+        ...(upload ? {attachment:upload.metadata} : {}) };
+      const filename = id + '.json';
+      const published = pkg.attachment
+        ? !existsSync(join(pkg.directory, filename)) && publishDirectory(pkg.directory, id, stage => {
+            writeFileSync(join(stage, 'record.json'), JSON.stringify(row), {flag:'wx',mode:0o600});
+            if (upload) writeFileSync(join(stage, 'attached-image'), upload.image, {flag:'wx',mode:0o600});
+          })
+        : !existsSync(join(pkg.directory, id)) && publishOnce(pkg.directory, filename, JSON.stringify(row));
+      if (!published) {
         const saved = readRecord(pkg.directory, id);
-        if (JSON.stringify(saved.values) !== JSON.stringify(values)) throw new PageError(409, 'submission_conflict');
+        if (JSON.stringify(saved.values) !== JSON.stringify(values) ||
+            JSON.stringify(saved.attachment) !== JSON.stringify(row.attachment)) {
+          throw new PageError(409, 'submission_conflict');
+        }
       }
       res.writeHead(303, { ...headers, location: link('/records') });
       res.end();
@@ -326,5 +377,5 @@ export function createWorkPackagePages(store) {
     res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp });
     res.end(html);
   }
-  return { describe: open, open, getRecord, listInline, matches: pathname => typeof pathname === 'string' && pathname.startsWith('/w/'), handle };
+  return { describe: open, open, getRecord, getAttachment, listInline, matches: pathname => typeof pathname === 'string' && pathname.startsWith('/w/'), handle };
 }

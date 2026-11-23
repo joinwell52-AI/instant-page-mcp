@@ -109,6 +109,8 @@
 
 **图片识别后的核对页。** 宿主把识别字段和规则放进 `specification.fields`，把已识别的值放进 `specification.initial_values`。用户可直接修改或清空对应输入框，核对无误可直接提交。按页号回读的 `submission.values` 反映最终提交内容，空的选填项会省略。[行驶证核对请求（合成数据）](examples/page-license-review.json)
 
+一次性页面可选 `specification.appearance`，登记册可选 `definition.appearance`。主题为 `default`、`blue` 或 `mono`，布局为 `stacked`、`grid` 或 `wide`。缺省沿用原样式。图片核对页还可通过 `specification.attachment` 接收一张随字段一同提交的 PNG/JPEG。回读包含附件元数据，授权宿主可通过本机附件接口取回原始字节。参数和示例见 [README](README.md#可选主题布局与原图附件)。
+
 下面的工具参数可与随包的培训目录直接配合。换成车辆核对或审批时，宿主换一份授权目录，数字员工据此组合页面。[培训目录](examples/training-context.json) · [完整请求](examples/page-training.json)
 
 ```json

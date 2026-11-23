@@ -5,8 +5,19 @@ description: 用即页 MCP 为当前任务生成填写、明细查看、核对�
 
 # 即页（IPM）
 
+[English usage guide](USAGE.en.md)
+
 - 简短信息在原对话中答复。需要填写字段、查看较多明细或明确作决定时，再为当前任务出页。
-- 调用 `describe_page_context({})` 发现已授权引用。从当前授权目录选取共享字段、事实、表格列和业务动作。宿主在数据进入目录前完成筛选和脱敏。
+- 用户已给出字段、规则和候选项时，直接用现有即页连接出页。需要查询共享字段、事实、表格列或业务动作时，再用 `describe_page_context({})` 发现授权引用。宿主在数据进入目录前完成筛选和脱敏。
+
+## 主题、布局和图片附件
+
+- 一般页面省略 `appearance`，沿用默认绿色样式和单列。用户有配色偏好时选 `theme` 的 `default`、`blue` 或 `mono`。
+- 短字段较多的核对页用 `layout: "grid"`，大屏两列、小屏单列；列较多的表格用 `layout: "wide"`；逐项填写用 `stacked`。主题和布局可独立组合。
+- 用 `appearance.locale` 指定初始语言 `zh-CN` 或 `en`，用户可在页内切换。要让标题、说明或字段名跟随切换，在 `appearance.translations` 提供两种语言。
+- 一次性页面把样式放进 `specification.appearance`。新登记册放进 `definition.appearance`，录入、列表和详情共用这份配置。
+- 确需原图随字段提交时，在一次性页传 `specification.attachment`，例如 `{"label":"原始图片","required":true}`。新登记册把同样的配置放进 `definition.attachment`。用户在同一页填写字段并选一张 PNG/JPEG（最多 10 MiB）。按页号或记录号回读字段和附件元数据；业务宿主有权限时可从本机附件接口取回原图。
+
 
 ## 工作包登记
 

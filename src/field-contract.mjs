@@ -2,13 +2,13 @@
 // renders and accepts form submissions. The versioned envelope also rejects
 // misspelled rules and references before the service begins accepting requests.
 import { fieldDefinition } from './render.mjs';
-import { isObject, validReference } from './schema.mjs';
+import { isObject, validAttachmentSpec, validPageAppearance, validReference } from './schema.mjs';
 
 const fieldKeys = new Set([
   'type', 'label', 'required', 'format', 'min_length', 'max_length',
   'min', 'max', 'integer', 'options'
 ]);
-const packageKeys = new Set(['label', 'parameters', 'list_columns']);
+const packageKeys = new Set(['label', 'parameters', 'list_columns', 'appearance', 'attachment']);
 
 function invalid(reason) {
   throw new Error(reason);
@@ -39,6 +39,8 @@ export function validateFieldContract(catalog) {
   for (const [ref, pkg] of Object.entries(catalog.work_packages)) {
     if (!validReference(ref) || !isObject(pkg) || typeof pkg.label !== 'string' || !pkg.label.trim() ||
         !allKnownKeys(pkg, packageKeys)) invalid('invalid_package_definition');
+    if (pkg.appearance !== undefined && !validPageAppearance(pkg.appearance)) invalid('invalid_package_appearance');
+    if (pkg.attachment !== undefined && !validAttachmentSpec(pkg.attachment)) invalid('invalid_package_attachment');
     validateRefs(pkg.parameters, available, 'invalid_package_parameters');
     if (Object.hasOwn(pkg, 'list_columns')) {
       validateRefs(pkg.list_columns, new Set(pkg.parameters), 'invalid_package_list_columns');

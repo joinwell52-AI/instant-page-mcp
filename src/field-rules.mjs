@@ -151,11 +151,14 @@ export function readSubmittedField(ref, field, raw) {
   }
 }
 
-export function validateFormAt(formUrl, validate) {
+export function validateFormAt(formUrl, validate, appearance) {
   try {
     return validate();
   } catch (error) {
-    if (error instanceof AnswerError) error.formUrl = formUrl;
+    if (error instanceof AnswerError) {
+      error.formUrl = formUrl;
+      error.appearance = appearance;
+    }
     throw error;
   }
 }

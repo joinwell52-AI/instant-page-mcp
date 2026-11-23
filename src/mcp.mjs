@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 // 独立页面服务的标准输入输出 MCP 接口。
-import { readFileSync } from 'node:fs';
 import http from 'node:http';
+import { validAttachmentMetadata } from './attachment.mjs';
 import { isSensitiveField } from './field-rules.mjs';
 import { MAX_PAGE_FIELDS, isObject, tools, validToolArguments, validAction, validPageId, validReference, validColumnId } from './schema.mjs';
 import { createInterface } from 'node:readline';
-
-const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+import { version } from './version.mjs';
 
 const versions = ['2025-11-25', '2025-06-18'];
 const routes = new Map([
@@ -123,6 +122,11 @@ function contextDescription(data) {
   if (JSON.stringify(clean).includes(capability)) invalid();
   return clean;
 }
+function publicAttachment(attachment) {
+  if (!validAttachmentMetadata(attachment)) throw new LocalError('invalid_companion_response');
+  const {filename,content_type,size,sha256} = attachment;
+  return {filename,content_type,size,sha256};
+}
 function sanitizePage(name, args, data) {
   const invalid = () => { throw new LocalError('invalid_companion_response'); };
   if (!isObject(data) || !validPageId(data.page_id) || (args.page_id && args.page_id.toLowerCase() !== data.page_id.toLowerCase()) ||
@@ -140,6 +144,7 @@ function sanitizePage(name, args, data) {
     if (entries.length > MAX_PAGE_FIELDS || entries.some(([k, v]) => !validReference(k) ||
         !(v === null || typeof v === 'boolean' || Number.isFinite(v) || (typeof v === 'string' && [...v].length <= 10000)))) invalid();
     output.submission = { action:s.action, reference:s.reference, values:Object.fromEntries(entries) };
+    if (s.attachment !== undefined) output.submission.attachment = publicAttachment(s.attachment);
   } else if (data.submission != null) invalid();
   // 页面服务即使配置错误，也不可将工具通道的私钥当作访问链接或文本回给模型。
   if (JSON.stringify(output).includes(capability) ||
@@ -176,6 +181,7 @@ function workPackageRecord(args,data) {
   if (fields.some(([key,value])=> !validReference(key) ||
       !(value===null || Number.isFinite(value) || (typeof value==='string' && value.length<=10000)))) invalid();
   const clean={package_ref:args.package_ref,record_id:data.record_id,values:Object.fromEntries(fields)};
+  if (data.attachment !== undefined) clean.attachment = publicAttachment(data.attachment);
   if (JSON.stringify(clean).includes(capability)) invalid();
   return clean;
 }

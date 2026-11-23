@@ -30,7 +30,7 @@ function record(path, data) {
 function read(path) { return JSON.parse(readFileSync(path,'utf8')); }
 function nonce() { return randomBytes(32).toString('base64url'); }
 // Both files are ready before a directory becomes visible. An existing committed directory is never overwritten.
-function publishDirectory(parent, name, write) {
+export function publishDirectory(parent, name, write) {
   // Windows mkdtemp needs an extended-length path for deeply nested page data.
   const stage = mkdtempSync(toNamespacedPath(join(parent,'.stage-')));
   const dest = join(parent,name);
@@ -114,10 +114,15 @@ export class PageStore {
   html(page) {
     return readFileSync(page.state==='submitted'?join(page.path,'answer','submitted.html'):join(page.path,'open.html'));
   }
-  submit(page, answer) {
+  attachment(page) {
+    if (!page.submission?.attachment) throw new PageError(404,'attachment_not_found');
+    return readFileSync(join(page.path,'answer','attached-image'));
+  }
+  submit(page, answer, upload) {
     this.current();
     this.assertBrowserLinkActive(page);
-    const logical = {action:answer.action.kind,reference:answer.action.reference,values:answer.fields};
+    const logical = {action:answer.action.kind,reference:answer.action.reference,values:answer.fields,
+      ...(upload ? {attachment:upload.metadata} : {})};
     if (!page.submission) {
       const submission = {...logical, submitted_at:new Date().toISOString()};
       const html = renderPage(page.data.specification,this.registry,{
@@ -125,6 +130,7 @@ export class PageStore {
       });
       publishDirectory(page.path,'answer',dir=>{
         record(join(dir,'answer.json'),submission);
+        if (upload) writeFileSync(join(dir,'attached-image'),upload.image,{mode:0o600,flag:'wx'});
         writeFileSync(join(dir,'submitted.html'),html,{mode:0o600,flag:'wx'});
       });
     }
