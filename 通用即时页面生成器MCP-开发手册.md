@@ -37,6 +37,8 @@
 
 **工作包只有输入参数时，直接生表。** 宿主把这一步需要人填的参数投影到字段目录，选定登记册，然后指定默认录入或列表。已有的项目配置、系统可取得的值和以后步骤才产生的材料，由各自来源补齐。若包只提供自然语言说明，包维护者先明确字段和规则。已指名的页面资源缺失、版本不符或入口键拼错，属于集成错误，宿主应报告原错误；只有原步骤没有指定入口时，才使用显式配置的默认入口。
 
+**对话中已明确本次登记字段时，可直接传定义。** 使用新的 `package_ref`，把 `label`、有序 `fields` 和可选 `list_columns` 作为 `definition` 一次交给 `open_work_package`。同一授权快照内，定义随登记册持久保存，重复提交相同定义会返回原登记册。使用新引用可另建不同定义的登记册。已指定工作包入口时仍按固定版本和入口键打开。[车辆登记请求](examples/work-package-vehicle-registration.json)
+
 **临时核对按本轮需要生成。** 数字员工从当前任务允许的事实、表格、字段、动作中选择内容，再交给 `generate_interaction_page`。例如一次只看交车门店和里程，另一次可以同时展示异常说明和“确认／退回”按钮。此次输入和决定形成这张页面的回执，归发起任务；需要写入登记册时，由宿主显式关联记录并完成写入。
 
 | 谁持有 | 持有什么 | 何时使用 |
@@ -95,13 +97,17 @@
 | 工具 | 输入 | 返回或用途 |
 |---|---|---|
 | `describe_page_context` | `{}` | 发现当前范围的资料、表格列、字段、动作和可用登记册。返回引用及元数据，原始数据行留在服务端 |
-| `open_work_package` | `package_ref` | 返回 `form_url` 和 `list_url`。这里传入入口声明中的 `collection_ref`，例如 `vehicle-intake` |
+| `open_work_package` | `package_ref`，可选 `definition` | 返回 `form_url` 和 `list_url`。这里传入入口声明中的 `collection_ref`，例如 `vehicle-intake` |
 | `get_work_package_record` | `package_ref`、`record_id` | 获取指定记录的类型化参数 `values` |
 | `generate_interaction_page` | `request_id`、`specification` | 返回 `page_id`、`state`、`url` 和标题。每个独立请求使用新的 UUID |
 | `get_interaction_page` | `page_id` | 重新取得该页的描述、状态和入口 |
 | `get_interaction_result` | `page_id` | 返回状态；提交后附带动作、引用和已填值 |
 
 专用页的 `specification` 有标题、用途、按顺序排列的 `blocks` 和 `actions`。区块 `narrative` 显示纯文本，`facts` 通过 `source_ref` 引用事实，`table` 可指定已授权的 `columns`，`input` 用 `field_ref` 放置字段。每个输入在同页出现一次。操作须同时匹配登记的 `kind` 和 `reference`。只读页面把 `actions` 设为空数组。
+
+**查询结果可以直接作本页的候选项。** 把已授权的候选值放入 `specification.fields` 的 `select` 字段，用 `field_ref` 在页面上放置它。一次性收集答复可显式使用 `{"kind":"submit_response","reference":"page-submit"}`。宿主按页号把最终选择关联到原查询条件，再发起业务查询。[租金二次查询页面请求](examples/page-rent-query.json)
+
+**图片识别后的核对页。** 宿主把识别字段和规则放进 `specification.fields`，把已识别的值放进 `specification.initial_values`。用户可直接修改或清空对应输入框，核对无误可直接提交。按页号回读的 `submission.values` 反映最终提交内容，空的选填项会省略。[行驶证核对请求（合成数据）](examples/page-license-review.json)
 
 下面的工具参数可与随包的培训目录直接配合。换成车辆核对或审批时，宿主换一份授权目录，数字员工据此组合页面。[培训目录](examples/training-context.json) · [完整请求](examples/page-training.json)
 

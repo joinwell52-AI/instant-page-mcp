@@ -1,0 +1,111 @@
+{
+  "request_id": "fd634a18-25b7-4efd-8adc-354a9d2d9b9f",
+  "specification": {
+    "title": "行驶证识别核对",
+    "purpose": "示例数据。请对照原件修正对应字段，核对无误可直接提交。",
+    "blocks": [
+      {
+        "kind": "input",
+        "field_ref": "owner"
+      },
+      {
+        "kind": "input",
+        "field_ref": "plate"
+      },
+      {
+        "kind": "input",
+        "field_ref": "vin"
+      },
+      {
+        "kind": "input",
+        "field_ref": "length_mm"
+      },
+      {
+        "kind": "input",
+        "field_ref": "width_mm"
+      },
+      {
+        "kind": "input",
+        "field_ref": "height_mm"
+      },
+      {
+        "kind": "input",
+        "field_ref": "engine"
+      },
+      {
+        "kind": "input",
+        "field_ref": "notes"
+      }
+    ],
+    "fields": [
+      {
+        "ref": "owner",
+        "label": "车辆所有人",
+        "type": "text",
+        "max_length": 120
+      },
+      {
+        "ref": "plate",
+        "label": "车牌号",
+        "type": "text",
+        "min_length": 8,
+        "max_length": 8
+      },
+      {
+        "ref": "vin",
+        "label": "车辆识别代号（VIN）",
+        "type": "text",
+        "min_length": 17,
+        "max_length": 17
+      },
+      {
+        "ref": "length_mm",
+        "label": "车长（毫米）",
+        "type": "number",
+        "integer": true,
+        "min": 1
+      },
+      {
+        "ref": "width_mm",
+        "label": "车宽（毫米）",
+        "type": "number",
+        "integer": true,
+        "min": 1
+      },
+      {
+        "ref": "height_mm",
+        "label": "车高（毫米）",
+        "type": "number",
+        "integer": true,
+        "min": 1
+      },
+      {
+        "ref": "engine",
+        "label": "发动机号（识别不清，可按原件补填）",
+        "type": "text",
+        "max_length": 80
+      },
+      {
+        "ref": "notes",
+        "label": "备注",
+        "type": "textarea",
+        "max_length": 800
+      }
+    ],
+    "initial_values": {
+      "owner": "示例运输有限公司",
+      "plate": "苏A000001",
+      "vin": "TEST0000000000001",
+      "length_mm": 4572,
+      "width_mm": 1825,
+      "height_mm": 1496,
+      "notes": "示例识别备注"
+    },
+    "actions": [
+      {
+        "kind": "submit_response",
+        "reference": "page-submit"
+      }
+    ]
+  }
+}

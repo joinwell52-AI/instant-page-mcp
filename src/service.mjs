@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isObject, validAction, validPageId, validReference, validToolArguments } from './schema.mjs';
 import { displayFieldValue, isSensitiveField, validateFormAt } from './field-rules.mjs';
-import { UnknownReference, AnswerError, validateAnswer, renderPage, fieldDefinition, escape, styles } from './render.mjs';
+import { UnknownReference, AnswerError, validateAnswer, renderPage, fieldDefinition, resolvePageFields, escape, styles } from './render.mjs';
 import { PageError, PageStore, scopeKeys } from './store.mjs';
 import { createWorkPackagePages } from './work-package.mjs';
 
@@ -65,7 +65,7 @@ function errors(req,res,error) {
 }
 const guarded = handler => (req,res)=>handler(req,res).catch(error=>errors(req,res,error));
 
-function describeContext(registry) {
+function describeContext(registry, inlinePackages) {
   // Project only public schema labels. Data rows, identity, option values and credentials never enter this response.
   const fromMap = (map, project) => Object.entries(map).map(([ref,entry])=>{
     if (!validReference(ref) || !isObject(entry) || typeof entry.label !== 'string' || !entry.label.trim()) throw new PageError(503,'invalid_context_metadata');
@@ -73,8 +73,9 @@ function describeContext(registry) {
   });
   const packages = registry.work_packages;
   if (packages !== undefined && !isObject(packages)) throw new PageError(503,'invalid_context_metadata');
+  const workPackages = [...fromMap(packages ?? {}, (ref, {label}) => ({ref, label})), ...inlinePackages];
   return {
-    ...(packages === undefined ? {} : {work_packages:fromMap(packages,(ref,{label})=>({ref,label}))}),
+    ...(packages === undefined && !workPackages.length ? {} : {work_packages:workPackages}),
     facts:fromMap(registry.facts,(ref,{label})=>({ref,label})),
     tables:fromMap(registry.tables,(ref,{label,columns})=>{
       if (!isObject(columns)) throw new PageError(503,'invalid_context_metadata');
@@ -129,8 +130,8 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
       res.writeHead(200,{...privateHeaders,'content-type':'text/html; charset=utf-8','content-security-policy':csp});
       // Older releases cached submitted HTML before formats supported masking.
       // Render sensitive inputs using the current display policy on every read.
-      const sensitive = page.data.specification.blocks.some(block =>
-        block.kind === 'input' && isSensitiveField(store.registry.fields[block.field_ref]));
+      const fields = resolvePageFields(page.data.specification, store.registry);
+      const sensitive = [...fields.values()].some(isSensitiveField);
       if (sensitive) {
         res.end(renderPage(page.data.specification,store.registry,{
           pageId:page.data.page_id,state:page.state,formToken:page.data.formToken,submission:page.submission
@@ -162,13 +163,13 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     if(!validToolArguments(apiRoutes.get(req.url),args)) reject(400,'invalid_arguments');
     if (req.url==='/v1/pages/context') {
       store.current();
-      return json(res,200,describeContext(store.registry));
+      return json(res,200,describeContext(store.registry,packages.listInline()));
     }
     if (req.url==='/v1/work-packages/record') {
       return json(res,200,packages.getRecord(args.package_ref,args.record_id));
     }
     if (req.url==='/v1/work-packages/open') {
-      const {package_ref,title,form_path,list_path,access_key}=packages.open(args.package_ref);
+      const {package_ref,title,form_path,list_path,access_key}=packages.open(args.package_ref,args.definition);
       const link=path=>{
         const url=new URL(path,base());
         url.searchParams.set('k',access_key);
@@ -181,10 +182,10 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     if(req.url==='/v1/pages/result') {
       if (page.submission) {
         const visible = [];
-        for (const block of page.data.specification.blocks) {
-          if (block.kind !== 'input' || !Object.hasOwn(page.submission.values,block.field_ref)) continue;
-          const ref = block.field_ref;
-          visible.push([ref, displayFieldValue(store.registry.fields[ref], page.submission.values[ref])]);
+        for (const [ref, field] of resolvePageFields(page.data.specification, store.registry)) {
+          if (Object.hasOwn(page.submission.values, ref)) {
+            visible.push([ref, displayFieldValue(field, page.submission.values[ref])]);
+          }
         }
         response.submission={...page.submission,values:Object.fromEntries(visible)};
       }

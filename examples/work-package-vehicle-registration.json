@@ -1,0 +1,18 @@
+{
+  "package_ref": "vehicle-registration",
+  "definition": {
+    "label": "车辆登记",
+    "fields": [
+      {"ref":"model","label":"车型型号","type":"text","required":true,"max_length":100},
+      {"ref":"plate","label":"车牌号","type":"text","required":true,"max_length":24},
+      {"ref":"engine","label":"发动机号","type":"text","required":true,"max_length":80},
+      {"ref":"chassis","label":"车架号（VIN）","type":"text","required":true,"max_length":80},
+      {"ref":"length","label":"车长（毫米）","type":"number","required":true,"integer":true,"min":1},
+      {"ref":"width","label":"车宽（毫米）","type":"number","required":true,"integer":true,"min":1},
+      {"ref":"height","label":"车高（毫米）","type":"number","required":true,"integer":true,"min":1},
+      {"ref":"color","label":"车身颜色","type":"select","required":true,"options":["黑色","红色","白色"]},
+      {"ref":"notes","label":"备注","type":"textarea","max_length":1000}
+    ],
+    "list_columns": ["model", "plate", "color"]
+  }
+}

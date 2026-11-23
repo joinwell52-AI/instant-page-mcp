@@ -7,6 +7,7 @@ const own = (obj, key) => obj != null && Object.hasOwn(obj, key);
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const hasLabel = v => typeof v === 'string' && v.trim() !== '';
 const scalar = v => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v));
+const pageSubmit = { reference: 'page-submit', kind: 'submit_response', label: '提交' };
 const columnName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const escape = value => String(value).replace(/[&<>"']/g, ch =>
   ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
@@ -22,17 +23,34 @@ function fieldDefinition(registry, ref) {
   return validateFieldDefinition(lookup(registry, 'fields', ref));
 }
 
+export function resolvePageFields(spec, registry) {
+  const inlineFields = new Map();
+  for (const {ref, ...definition} of spec.fields ?? []) {
+    if (inlineFields.has(ref) || own(registry?.fields, ref)) {
+      throw new UnknownReference('本页字段标识重复或与当前上下文字段冲突。');
+    }
+    inlineFields.set(ref, validateFieldDefinition(definition));
+  }
+  const fields = new Map();
+  for (const block of spec.blocks) {
+    if (block.kind !== 'input') continue;
+    const ref = block.field_ref;
+    if (fields.has(ref)) throw new UnknownReference('同一页面重复引用输入字段。');
+    fields.set(ref, inlineFields.get(ref) ?? fieldDefinition(registry, ref));
+  }
+  for (const ref of inlineFields.keys()) {
+    if (!fields.has(ref)) throw new UnknownReference('本页字段必须放入输入区块。');
+  }
+  return fields;
+}
+
 function resolve(spec, registry) {
   if (!validPageSpecification(spec)) throw new UnknownReference('页面声明格式无效。');
-  const fields = new Map(), actions = new Map();
+  const fields = resolvePageFields(spec, registry);
+  const actions = new Map();
   const blocks = spec.blocks.map(b => {
     if (b.kind === 'narrative') return b;
-    if (b.kind === 'input') {
-      if (fields.has(b.field_ref)) throw new UnknownReference('同一页面重复引用输入字段。');
-      const source = fieldDefinition(registry,b.field_ref);
-      fields.set(b.field_ref,source);
-      return { ...b, source };
-    }
+    if (b.kind === 'input') return { ...b, source: fields.get(b.field_ref) };
     if (b.kind === 'facts') {
       const source = lookup(registry,'facts',b.source_ref);
       if (!Array.isArray(source.items) || source.items.some(i => !object(i) || !hasLabel(i.label) || !scalar(i.value)))
@@ -48,7 +66,9 @@ function resolve(spec, registry) {
     return { ...b, source, cols };
   });
   for (const a of spec.actions) {
-    const source = lookup(registry,'actions',a.reference);
+    const usePageSubmit = spec.fields?.length > 0 && a.reference === pageSubmit.reference &&
+      !own(registry?.actions, a.reference);
+    const source = usePageSubmit ? pageSubmit : lookup(registry,'actions',a.reference);
     if (source.kind !== a.kind || actions.has(a.reference)) throw new UnknownReference('页面操作未授权或重复。');
     actions.set(a.reference,source);
   }
@@ -76,27 +96,39 @@ export function validateAnswer(spec, registry, params) {
   return { action:{ kind:actions.get(action).kind, reference:action }, fields:Object.fromEntries(values) };
 }
 
+function pageInitialValues(spec, fields) {
+  const values = new Map();
+  for (const [ref, value] of Object.entries(spec.initial_values ?? {})) {
+    const field = fields.get(ref);
+    if (!field) throw new UnknownReference('预填值必须对应本页的输入字段。');
+    const raw = field.type === 'number' && typeof value === 'number' ? String(value) : value;
+    values.set(ref, readSubmittedField(ref, field, raw));
+  }
+  return values;
+}
+
 function inputHtml(f,ref,id,locked,value) {
   const label = '<label for="'+id+'">'+escape(f.label)+(f.required?' <small>必填</small>':'')+'</label>';
   if (locked) return label+'<output id="'+id+'">'+escape(displayFieldValue(f, value) ?? '未填写')+'</output>';
   const attrs = ' id="'+id+'" name="field.'+escape(ref)+'"'+(f.required?' required':'');
+  const valueAttr = value === undefined ? '' : ' value="'+escape(value)+'"';
   if (f.type === 'select') return label+'<select'+attrs+'><option value="">请选择</option>'+
-    f.options.map(x=>'<option value="'+escape(x)+'">'+escape(x)+'</option>').join('')+'</select>';
+    f.options.map(x=>'<option value="'+escape(x)+'"'+(x===value?' selected':'')+'>'+escape(x)+'</option>').join('')+'</select>';
   if (f.format === 'cn_mobile') {
-    return label+'<input'+attrs+' type="tel" inputmode="tel" autocomplete="tel" maxlength="17" placeholder="11 位手机号，可带 +86">';
+    return label+'<input'+attrs+' type="tel" inputmode="tel" autocomplete="tel" maxlength="17" placeholder="11 位手机号，可带 +86"'+valueAttr+'>';
   }
   if (f.format === 'cn_resident_id') {
-    return label+'<input'+attrs+' type="text" inputmode="text" autocapitalize="characters" spellcheck="false" autocomplete="off" minlength="18" maxlength="18" pattern="[0-9]{17}[0-9Xx]" placeholder="18 位，末位可以是 X">';
+    return label+'<input'+attrs+' type="text" inputmode="text" autocapitalize="characters" spellcheck="false" autocomplete="off" minlength="18" maxlength="18" pattern="[0-9]{17}[0-9Xx]" placeholder="18 位，末位可以是 X"'+valueAttr+'>';
   }
   const attr = (key, val) => val === undefined ? '' : ' '+key+'="'+escape(val)+'"';
   if (f.type === 'textarea' || f.type === 'text') {
     const limits = attr('minlength', f.min_length) + attr('maxlength', f.max_length ?? 2000);
-    if (f.type === 'textarea') return label+'<textarea'+attrs+' rows="3"'+limits+'></textarea>';
-    return label+'<input'+attrs+' type="text"'+limits+'>';
+    if (f.type === 'textarea') return label+'<textarea'+attrs+' rows="3"'+limits+'>'+escape(value ?? '')+'</textarea>';
+    return label+'<input'+attrs+' type="text"'+limits+valueAttr+'>';
   }
   const limits = attr('min', f.min) + attr('max', f.max);
   const step = f.type === 'number' ? attr('step', f.integer ? '1' : 'any') : '';
-  return label+'<input'+attrs+' type="'+f.type+'"'+step+limits+'>';
+  return label+'<input'+attrs+' type="'+f.type+'"'+step+limits+valueAttr+'>';
 }
 
 const styles = `
@@ -110,14 +142,15 @@ input,textarea,select,button{font:inherit}input,textarea,select,output{display:b
 @media(max-width:600px){main{min-height:100vh;margin:0;border:0;border-radius:0}td,th{padding:.48rem .4rem}} `;
 
 export function renderPage(spec, registry, options = {}) {
-  const { blocks, actions } = resolve(spec,registry);
+  const { blocks, fields, actions } = resolve(spec,registry);
   const { pageId, state, formToken, submission }=options;
+  const initial = state === 'submitted' ? new Map() : pageInitialValues(spec, fields);
   const submitted=state==='submitted', interactive=!submitted && actions.size > 0 && typeof formToken==='string' && formToken.length>0 && typeof pageId==='string' && pageId.length>0;
   const content=blocks.map((b,i)=>{
     if (b.kind === 'narrative') return '<section><p class="note">'+escape(b.text)+'</p></section>';
     const s=b.source;
     if (b.kind === 'input') {
-      const value=own(submission?.values,b.field_ref)?submission.values[b.field_ref]:undefined;
+      const value = submitted ? (own(submission?.values,b.field_ref) ? submission.values[b.field_ref] : undefined) : initial.get(b.field_ref);
       return '<section>'+inputHtml(s,b.field_ref,'f'+i,!interactive,value)+'</section>';
     }
     const start='<section><h2>'+escape(s.label)+'</h2>';

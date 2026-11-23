@@ -1,0 +1,9 @@
+{
+  "principal": "local-demo",
+  "workspace": "demo-workspace",
+  "task": "interactive-pages",
+  "facts": {},
+  "tables": {},
+  "fields": {},
+  "actions": {}
+}

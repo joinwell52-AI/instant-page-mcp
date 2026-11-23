@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { validateFieldContract } from './field-contract.mjs';
 import { displayFieldValue, isSensitiveField, readSubmittedField, validateFormAt } from './field-rules.mjs';
 import { AnswerError, escape, fieldDefinition, inputHtml, styles } from './render.mjs';
 import { isObject, validPageId, validReference } from './schema.mjs';
@@ -181,18 +182,66 @@ function readRecords(directory) {
       b.record_id.localeCompare(a.record_id));
 }
 
+function inlineRegistry(reference, {label, fields, list_columns}) {
+  return {
+    field_spec_version: '1.0',
+    fields: Object.fromEntries(fields.map(({ref, ...field}) => [ref, field])),
+    work_packages: {
+      [reference]: {label, parameters: fields.map(({ref}) => ref),
+        ...(list_columns === undefined ? {} : {list_columns})}
+    }
+  };
+}
+
 export function createWorkPackagePages(store) {
+  const inlineDirectory = join(store.root, 'inline-work-packages');
   const references = new Map();
   for (const ref of Object.keys(store.registry.work_packages ?? {})) {
     if (validReference(ref)) references.set(packageId(store.contextDigest, ref), ref);
   }
 
-  function prepare(ref) {
+  function loadInline(id) {
+    try {
+      return JSON.parse(readFileSync(join(inlineDirectory, id + '.json'), 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+
+  function listInline() {
+    if (!existsSync(inlineDirectory)) return [];
+    return readdirSync(inlineDirectory)
+      .filter(file => file.endsWith('.json') && validPageId(file.slice(0, -5)))
+      .map(file => loadInline(file.slice(0, -5)))
+      .map(({ref, definition}) => ({ref, label: definition.label}));
+  }
+
+  function registerInline(id, ref, definition) {
+    if (references.has(id)) throw new PageError(409, 'work_package_definition_conflict');
+    try {
+      validateFieldContract(inlineRegistry(ref, definition));
+    } catch {
+      throw new PageError(400, 'invalid_work_package_definition');
+    }
+    mkdirSync(inlineDirectory, directoryMode);
+    if (!publishOnce(inlineDirectory, id + '.json', JSON.stringify({ref, definition}))) {
+      const {definition: existing} = loadInline(id);
+      if (JSON.stringify(canonical(existing)) !== JSON.stringify(canonical(definition))) {
+        throw new PageError(409, 'work_package_definition_conflict');
+      }
+    }
+  }
+
+  function prepare(id) {
     store.current();
-    const metadata = specification(store.registry, ref);
-    const id = packageId(store.contextDigest, ref);
+    const declaredRef = references.get(id);
+    const inline = declaredRef === undefined ? loadInline(id) : undefined;
+    const ref = declaredRef ?? inline?.ref;
+    if (ref === undefined) throw new PageError(404, 'work_package_not_found');
+    const metadata = specification(inline ? inlineRegistry(ref, inline.definition) : store.registry, ref);
     const root = join(store.root, 'work-packages', id);
-    const directory = join(store.directory, 'work-package-records', recordsKey(store.registry, ref, metadata.fields));
+    const directory = inline ? join(root, 'records') :
+      join(store.directory, 'work-package-records', recordsKey(store.registry, ref, metadata.fields));
     mkdirSync(root, directoryMode);
     mkdirSync(directory, directoryMode);
     if (!existsSync(join(root, 'secret'))) publishOnce(root, 'secret', randomBytes(32));
@@ -200,8 +249,13 @@ export function createWorkPackagePages(store) {
     return { ...metadata, id, directory, key, access: hmac(key, 'local-access') };
   }
 
-  function open(ref) {
-    const pkg = prepare(ref);
+  function open(ref, definition) {
+    const id = packageId(store.contextDigest, ref);
+    if (definition !== undefined) {
+      store.current();
+      registerInline(id, ref, definition);
+    }
+    const pkg = prepare(id);
     const root = '/w/' + pkg.id;
     return { package_ref: ref, title: pkg.title, form_path: root + '/form',
       list_path: root + '/records', access_key: pkg.access };
@@ -209,7 +263,7 @@ export function createWorkPackagePages(store) {
 
   function getRecord(ref, recordId) {
     if (!validPageId(recordId)) throw new PageError(404, 'record_not_found');
-    const pkg = prepare(ref);
+    const pkg = prepare(packageId(store.contextDigest, ref));
     const row = readRecord(pkg.directory, recordId.toLowerCase());
     const visible = [];
     for (const [key, field] of pkg.fields) {
@@ -232,9 +286,7 @@ export function createWorkPackagePages(store) {
         throw new PageError(403, 'access_denied');
       }
     }
-    const ref = references.get(route[1]);
-    if (!ref) throw new PageError(404, 'work_package_not_found');
-    const pkg = prepare(ref);
+    const pkg = prepare(route[1]);
     if (!authenticate && (url.searchParams.getAll('k').length !== 1 || !sameSecret(url.searchParams.get('k'), pkg.access))) {
       throw new PageError(403, 'access_denied');
     }
@@ -274,5 +326,5 @@ export function createWorkPackagePages(store) {
     res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp });
     res.end(html);
   }
-  return { describe: open, open, getRecord, matches: pathname => typeof pathname === 'string' && pathname.startsWith('/w/'), handle };
+  return { describe: open, open, getRecord, listInline, matches: pathname => typeof pathname === 'string' && pathname.startsWith('/w/'), handle };
 }

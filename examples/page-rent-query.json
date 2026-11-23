@@ -1,0 +1,21 @@
+{
+  "request_id": "477da850-49ce-4ebc-a731-4412712594f8",
+  "specification": {
+    "title": "张三 · 本月租金查询",
+    "purpose": "从上一步查询的候选车牌中选择一辆，提交后把所选车牌交回 Codex。",
+    "blocks": [
+      {"kind":"narrative","text":"司机：张三\n指标：租金收入\n月份：2026 年 11 月"},
+      {"kind":"input","field_ref":"plate"}
+    ],
+    "fields": [
+      {
+        "ref":"plate",
+        "label":"车牌号",
+        "type":"select",
+        "required":true,
+        "options":["苏A123456","苏A432345","苏A877899"]
+      }
+    ],
+    "actions": [{"kind":"submit_response","reference":"page-submit"}]
+  }
+}

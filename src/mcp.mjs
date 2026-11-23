@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import { isSensitiveField } from './field-rules.mjs';
-import { isObject, tools, validToolArguments, validAction, validPageId, validReference, validColumnId } from './schema.mjs';
+import { MAX_PAGE_FIELDS, isObject, tools, validToolArguments, validAction, validPageId, validReference, validColumnId } from './schema.mjs';
 import { createInterface } from 'node:readline';
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -137,7 +137,7 @@ function sanitizePage(name, args, data) {
     const s = data.submission;
     if (!isObject(s) || !validAction({ kind:s.action, reference:s.reference }) || !isObject(s.values)) invalid();
     const entries = Object.entries(s.values);
-    if (entries.length > 16 || entries.some(([k, v]) => !validReference(k) ||
+    if (entries.length > MAX_PAGE_FIELDS || entries.some(([k, v]) => !validReference(k) ||
         !(v === null || typeof v === 'boolean' || Number.isFinite(v) || (typeof v === 'string' && [...v].length <= 10000)))) invalid();
     output.submission = { action:s.action, reference:s.reference, values:Object.fromEntries(entries) };
   } else if (data.submission != null) invalid();

@@ -346,3 +346,69 @@ test('资料和显示布局变化保留同包记录，参数合同或身份范�
     assert.equal((await read()).isError, true);
   }
 });
+
+test('单次 MCP 调用定义车辆登记册，验证提交并在重启后读回', { timeout: 15000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'inline-intake-'));
+  const contextFile = join(directory, 'context.json');
+  const context = JSON.parse(await readFile(example, 'utf8'));
+  await writeFile(contextFile, JSON.stringify(context));
+  const capability = randomBytes(32).toString('base64url');
+  let host = await startHost(directory, contextFile, capability);
+  t.after(async () => {
+    if (host) await host.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const args = JSON.parse(await readFile(new URL('../examples/work-package-vehicle-registration.json', import.meta.url), 'utf8'));
+  const ref = { package_ref: args.package_ref };
+  const call = (name, input) => host.tool(name, input);
+  assert.equal((await call('open_work_package', ref)).structuredContent.code, 'not_found');
+  const withFields = fields => ({ ...args, definition: { ...args.definition, fields } });
+  const fields = args.definition.fields;
+  assert.equal((await call('open_work_package', withFields([...fields, fields[0]]))).structuredContent.code, 'invalid_specification');
+  assert.equal((await call('open_work_package', withFields(fields.map(field => field.ref === 'length' ?
+    {...field, max: 0} : field)))).structuredContent.code, 'invalid_specification');
+  assert.equal((await call('open_work_package', withFields(fields.map(field => field.ref === 'color' ?
+    {...field, options: ['黑色', '黑色']} : field)))).structuredContent.code, 'invalid_arguments');
+  assert.equal((await call('open_work_package', { ...args, ...pkg })).structuredContent.code, 'conflict');
+  const opened = await call('open_work_package', args);
+  assert.equal(opened.isError, false);
+  assert.deepEqual((await call('open_work_package', args)).structuredContent, opened.structuredContent);
+  assert.deepEqual((await call('open_work_package', ref)).structuredContent, opened.structuredContent);
+  assert.equal((await call('open_work_package', { ...args, definition: {...args.definition, label:'其他登记册'} })).structuredContent.code, 'conflict');
+  const {work_packages, fields: catalogFields} = (await call('describe_page_context')).structuredContent;
+  assert.ok(work_packages.some(item => item.ref === ref.package_ref && item.label === '车辆登记'));
+  assert.ok(!catalogFields.some(field => field.ref === 'engine'));
+  const {form_url, list_url} = opened.structuredContent;
+  const form = await openForm(form_url);
+  assert.match(form.page, /<select[^>]+name="field\.color"[^>]+required/);
+  assert.deepEqual([...form.page.matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), ['黑色', '红色', '白色']);
+  const values = {model:'合成测试车',plate:'TEST-IPM',engine:'0001',chassis:'VIN-TEST-01',
+    length:'4820',width:'1860',height:'1510',color:'白色'};
+  assert.equal((await form.post({...values, color:'蓝色'})).status, 400);
+  assert.equal((await form.post({...values, length:'1.5'})).status, 400);
+  assert.equal(detailLinks(await html(list_url), list_url).length, 0);
+  assert.equal((await form.post(values)).status, 303);
+  const [detail] = detailLinks(await html(list_url), list_url);
+  assert.match(await html(detail), /VIN-TEST-01/);
+  const record = {...ref, record_id:detail.pathname.split('/').at(-1)};
+  await host.close();
+  host = undefined;
+  host = await startHost(directory, contextFile, capability);
+  assert.deepEqual((await call('get_work_package_record', record)).structuredContent, {
+    ...record, values:{...values, length:4820, width:1860, height:1510}
+  });
+  const reopened = (await call('open_work_package', ref)).structuredContent;
+  assert.equal(detailLinks(await html(reopened.list_url), reopened.list_url).length, 1);
+
+  // A different task can use the same reference without gaining access to this record.
+  const otherFile = join(directory, 'other.json');
+  await writeFile(otherFile, JSON.stringify({...context, task:'other-task'}));
+  const other = await startHost(directory, otherFile, randomBytes(32).toString('base64url'));
+  try {
+    assert.equal((await other.tool('open_work_package', ref)).structuredContent.code, 'not_found');
+    assert.equal((await other.tool('open_work_package', args)).isError, false);
+    assert.equal((await other.tool('get_work_package_record', record)).structuredContent.code, 'not_found');
+  } finally {
+    await other.close();
+  }
+});

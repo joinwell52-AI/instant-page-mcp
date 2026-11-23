@@ -209,3 +209,112 @@ test('身份证和手机号在工作包列表、单条详情、一次性页面�
   assert.ok(masked.includes(phoneMask) && masked.includes(idMask));
   assert.ok(!masked.includes(rawId) && !masked.includes(rawPhone));
 });
+
+test('一次性查询页随请求定义候选车牌，校验选择并在重启后回读', async t => {
+  const site = await setup(t);
+  const args = fixture('page-rent-query.json');
+  const {specification} = args;
+  const [plate] = specification.fields;
+  const changed = patch => ({...args, specification:{...specification, ...patch}});
+  assert.equal((await site.api('generate', changed({fields:[plate, plate]}))).status, 404);
+  assert.equal((await site.api('generate', changed({fields:[plate, {...plate, ref:'visit-time'}]}))).status, 404);
+  assert.equal((await site.api('generate', changed({fields:[plate, {...plate, ref:'unused'}]}))).status, 404);
+  assert.equal((await site.api('generate', changed({
+    actions:[{kind:'rent.query', reference:'page-submit'}]
+  }))).status, 404);
+  assert.equal((await site.api('generate', changed({
+    fields:undefined, blocks:[{kind:'narrative', text:'旧接口不得绕开动作授权'}]
+  }))).status, 404);
+  const opened = await site.api('generate', args);
+  assert.equal(opened.status, 200);
+  const page = await opened.json();
+  const id = {page_id:page.page_id};
+  assert.deepEqual(await (await site.api('generate', args)).json(), page);
+  assert.equal((await site.api('generate', changed({
+    fields:[{...plate, options:['苏A123456']}]
+  }))).status, 409);
+  const context = await (await site.api('context', {})).json();
+  assert.ok(!context.fields.some(field => field.ref === 'plate'));
+
+  const html = await (await fetch(page.url)).text();
+  assert.match(html, /<select[^>]+name="field\.plate"[^>]+required/);
+  assert.deepEqual([...html.matchAll(/<option value="([^"]+)"/g)].map(match => match[1]), plate.options);
+  const form = {form_token:token(html), action:'page-submit'};
+  assert.equal((await submit(site.base, page.page_id, form)).status, 400);
+  assert.equal((await submit(site.base, page.page_id, {...form, 'field.plate':'苏A000000'})).status, 400);
+  assert.deepEqual(await (await site.api('result', id)).json(), {...id, state:'open'});
+  assert.equal((await submit(site.base, page.page_id, {...form, 'field.plate':'苏A432345'})).status, 303);
+  assert.match(await (await fetch(page.url)).text(), /苏A432345/);
+  await site.restart();
+  const receipt = await (await site.api('result', id)).json();
+  assert.deepEqual(receipt.submission.values, {plate:'苏A432345'});
+  assert.equal(receipt.submission.action, 'submit_response');
+  assert.equal(receipt.submission.reference, 'page-submit');
+  assert.equal(receipt.state, 'submitted');
+});
+
+test('一次性页的请求字段继续使用字段长度校验和敏感格式掩码', async t => {
+  const site = await setup(t);
+  const definition = fixture('page-rent-query.json');
+  const {specification} = definition;
+  specification.blocks = [
+    {kind:'input', field_ref:'vin'},
+    {kind:'input', field_ref:'mobile'}
+  ];
+  specification.fields = [
+    {ref:'vin', label:'车架号', type:'text', required:true, min_length:17, max_length:17},
+    {ref:'mobile', label:'联系手机', type:'text', format:'cn_mobile', required:true}
+  ];
+  const page = await (await site.api('generate', definition)).json();
+  const html = await (await fetch(page.url)).text();
+  const form = {form_token:token(html), action:'page-submit', 'field.mobile':'13800138000'};
+  assert.equal((await submit(site.base, page.page_id, {...form, 'field.vin':'TOO-SHORT'})).status, 400);
+  assert.equal((await submit(site.base, page.page_id, {...form, 'field.vin':'TEST0000000000001'})).status, 303);
+  const receipt = await (await site.api('result', {page_id:page.page_id})).json();
+  assert.equal(receipt.submission.values.vin, 'TEST0000000000001');
+  assert.equal(receipt.submission.values.mobile, '+86138****8000');
+  const submitted = await (await fetch(page.url)).text();
+  assert.ok(submitted.includes('+86138****8000'));
+  assert.ok(!submitted.includes('13800138000'));
+});
+
+test('一次性核对页预填可编辑字段，并按实际提交值生成回执', async t => {
+  const site = await setup(t);
+  const fields = [
+    {ref:'owner', label:'所有人', type:'text'},
+    {ref:'height', label:'车高（毫米）', type:'number', integer:true, min:1},
+    {ref:'date', label:'注册日期', type:'date'},
+    {ref:'color', label:'颜色', type:'select', options:['黑色','白色']},
+    {ref:'notes', label:'备注', type:'textarea'}
+  ];
+  const args = {request_id:randomUUID(), specification:{
+    title:'行驶证识别核对', purpose:'修正有误的预填值后提交。',
+    blocks:fields.map(({ref}) => ({kind:'input', field_ref:ref})),
+    fields, actions:[{kind:'submit_response', reference:'page-submit'}],
+    initial_values:{owner:'A" <单位>', height:1496, date:'2018-12-29', color:'白色', notes:'原件\n备注'}
+  }};
+  const invalid = initial_values => ({...args, specification:{...args.specification, initial_values}});
+  assert.equal((await site.api('generate', invalid({unknown:'无输入控件'}))).status, 404);
+  assert.equal((await site.api('generate', invalid({color:'未登记选项'}))).status, 400);
+  assert.equal((await site.api('generate', invalid({height:1.5}))).status, 400);
+  const response = await site.api('generate', args);
+  assert.equal(response.status, 200);
+  const page = await response.json();
+  const html = await (await fetch(page.url)).text();
+  assert.match(html, /name="field\.owner"[^>]+value="A&quot; &lt;单位&gt;"/);
+  assert.match(html, /name="field\.height"[^>]+value="1496"/);
+  assert.match(html, /name="field\.date"[^>]+value="2018-12-29"/);
+  assert.match(html, /<option value="白色" selected>白色<\/option>/);
+  assert.match(html, /<textarea[^>]*>原件\n备注<\/textarea>/);
+  assert.equal((await site.api('generate', invalid({owner:'其他值'}))).status, 409);
+
+  const form = {form_token:token(html), action:'page-submit', 'field.owner':'更正的所有人',
+    'field.height':'1496', 'field.date':'2018-12-29', 'field.color':'白色', 'field.notes':''};
+  assert.equal((await submit(site.base, page.page_id, form)).status, 303);
+  const id = {page_id:page.page_id};
+  const receipt = await (await site.api('result', id)).json();
+  assert.deepEqual(receipt.submission.values, {owner:'更正的所有人', height:1496, date:'2018-12-29', color:'白色'});
+  const finalHtml = await (await fetch(page.url)).text();
+  assert.match(finalHtml, /更正的所有人/);
+  assert.doesNotMatch(finalHtml, /A&quot;|原件\n备注/);
+});
