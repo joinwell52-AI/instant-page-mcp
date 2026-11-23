@@ -2,6 +2,8 @@
 
 [简体中文](README.md) · **English**
 
+[npm](https://www.npmjs.com/package/instant-page-mcp) · [GitHub Releases](https://github.com/joinwell52-AI/instant-page-mcp/releases) · [Official MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.joinwell52-AI%2Finstant-page-mcp) · [Local installation](#install-and-run-locally)
+
 IPM gives AI agents a web page for a specific task. Use a page when people need to enter records, choose a query parameter, inspect a table, or confirm values extracted from a document. The host supplies authorized data and rules. IPM renders the page, validates submissions, and lets the host read them back. OCR, ERP queries, business writes, and approval permissions are handled by the host and its integrations.
 
 ## Examples
@@ -48,6 +50,9 @@ Requires Node.js 22 or later. The core has no npm runtime dependencies. Codex, C
 npm install -g instant-page-mcp@0.4.1
 instant-page-mcp-demo
 ```
+
+To upgrade a global installation, run `npm install -g instant-page-mcp@latest`, then restart the IPM service and the host's MCP session.
+If Codex's launch command still points to a source checkout or a pinned version, update the launch command first.
 
 To build from source, run these commands in Windows PowerShell from the repository root:
 

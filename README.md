@@ -2,6 +2,8 @@
 
 **简体中文** · [English](README.en.md)
 
+[npm](https://www.npmjs.com/package/instant-page-mcp) · [GitHub Releases](https://github.com/joinwell52-AI/instant-page-mcp/releases) · [官方 MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.joinwell52-AI%2Finstant-page-mcp) · [安装与接入](#本机安装与接入)
+
 即页（Instant Page MCP，简称 IPM）把数字员工手头这一项任务变成一张能查看、填写或确认的网页。日常问答留在聊天里。需要人录入资料、核对图片识别结果、从查询结果里选条件，或在 ERP 缺少现成列表时展示明细，数字员工可以用一次 MCP 调用出页，再用记录号或页号把提交接回原任务。
 
 宿主提供已授权的数据、字段规则和业务动作。即页负责渲染、校验、保存与回读。图片识别、ERP 查询、正式审批和业务写入由宿主或接入系统执行。核心可独立安装，CodeFlowMu、微信桥和 Codex 都是可选接入方。
@@ -96,6 +98,9 @@
 npm install -g instant-page-mcp@0.4.1
 instant-page-mcp-demo
 ```
+
+已全局安装的即页需要手动升级。运行 `npm install -g instant-page-mcp@latest`，然后重启即页服务和宿主的 MCP 会话。
+如果 Codex 的启动命令还指向旧的源码目录或固定版本，请先更新该启动命令。
 
 从源码安装时，在仓库根目录用 PowerShell 打包。
 
