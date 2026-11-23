@@ -1,6 +1,6 @@
 {
   "name": "instant-page-mcp",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "mcpName": "io.github.joinwell52-AI/instant-page-mcp",
   "description": "为数字员工生成登记、查询选择和可编辑核对页，支持提交校验与 MCP 回读。",
   "type": "module",
@@ -10,13 +10,14 @@
   "bin": {
     "instant-page-mcp": "./bin/mcp.mjs",
     "instant-page-mcp-service": "./bin/service.mjs",
-    "instant-page-mcp-demo": "./bin/demo.mjs"
+    "instant-page-mcp-demo": "./bin/demo.mjs",
+    "instant-page-mcp-managed": "./bin/managed.mjs"
   },
   "scripts": {
     "start": "node src/mcp.mjs",
     "service": "node src/service.mjs",
     "demo": "node bin/demo.mjs",
-    "test": "node --test test/mcp.test.mjs test/render.test.mjs test/service.test.mjs test/generic-host.test.mjs test/work-package.test.mjs test/field-contract.test.mjs test/registry-contract.test.mjs test/link-lifetime.test.mjs test/field-feedback.test.mjs integrations/work-package/adapter.test.mjs integrations/work-package/frozen-asset.test.mjs"
+    "test": "node --test test/mcp.test.mjs test/render.test.mjs test/service.test.mjs test/generic-host.test.mjs test/work-package.test.mjs test/field-contract.test.mjs test/registry-contract.test.mjs test/link-lifetime.test.mjs test/field-feedback.test.mjs test/managed.test.mjs integrations/work-package/adapter.test.mjs integrations/work-package/frozen-asset.test.mjs"
   },
   "files": [
     "README.en.md",

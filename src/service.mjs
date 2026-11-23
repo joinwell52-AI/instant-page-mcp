@@ -273,16 +273,21 @@ export function createPageService({directory,contextFile,capability,linkTtlSecon
     },
   };
 }
+export function pageServiceSettings() {
+  if(setting('PUBLIC_BASE')) throw Error('public_base_requires_authenticated_gateway');
+  const portText=setting('PORT')??'';
+  if(!/^[1-9][0-9]{0,4}$/.test(portText)||Number(portText)>65535) throw Error('invalid_port');
+  const ttlText = setting('LINK_TTL_SECONDS');
+  if (ttlText !== undefined && !/^[0-9]+$/.test(ttlText)) throw Error('invalid_link_ttl');
+  return { directory:setting('DATA_DIR'), contextFile:setting('CONTEXT_FILE'), capability:setting('CAPABILITY'),
+    port:Number(portText), linkTtlSeconds:ttlText === undefined ? 0 : Number(ttlText) };
+}
+
 export async function runPageService() {
   try {
-    if(setting('PUBLIC_BASE')) throw Error('public_base_requires_authenticated_gateway');
-    const portText=setting('PORT')??'';
-    if(!/^[1-9][0-9]{0,4}$/.test(portText)||Number(portText)>65535) throw Error('invalid_port');
-    const ttlText = setting('LINK_TTL_SECONDS');
-    if (ttlText !== undefined && !/^[0-9]+$/.test(ttlText)) throw Error('invalid_link_ttl');
-    const instance=createPageService({directory:setting('DATA_DIR'),contextFile:setting('CONTEXT_FILE'),
-      capability:setting('CAPABILITY'),linkTtlSeconds:ttlText === undefined ? 0 : Number(ttlText)});
-    await instance.listen(Number(portText));
+    const { port, ...settings } = pageServiceSettings();
+    const instance=createPageService(settings);
+    await instance.listen(port);
     console.log('独立页面服务已在本机回环接口启动。');
   } catch {
     console.error('服务启动失败，请核对上下文文件、存储目录、能力值与本机端口。');

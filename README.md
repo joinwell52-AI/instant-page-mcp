@@ -95,25 +95,45 @@
 需要 Node.js 22 或更新版本。核心运行时零 npm 依赖。从 npm 安装后可直接启动演示。
 
 ```powershell
-npm install -g instant-page-mcp@0.4.1
+npm install -g instant-page-mcp
 instant-page-mcp-demo
 ```
 
-已全局安装的即页需要手动升级。运行 `npm install -g instant-page-mcp@latest`，然后重启即页服务和宿主的 MCP 会话。
-如果 Codex 的启动命令还指向旧的源码目录或固定版本，请先更新该启动命令。
+### 接入 Codex 与自动更新
+
+从 `0.4.2` 起，管理启动器会一起运行 MCP 和本机页面服务。首次安装或从 `0.4.1` 迁移时，安装含启动器的版本，再登记一次 Codex 启动命令。
+
+```powershell
+$ipmDir = Join-Path (npm root -g) 'instant-page-mcp'
+codex mcp add instant-page-mcp -- node (Join-Path $ipmDir 'bin/managed.mjs')
+```
+
+在 Codex 重启 MCP 会话后即可使用。Windows 默认把数据放在 `%LOCALAPPDATA%\instant-page-mcp\data`，页面服务监听本机 `8765`。这个端口同一时间可运行一个管理会话。已有独立安装迁移时，先停止原页面服务，在同一个 Codex 条目里沿用原来的 `PAGE_MCP_DATA_DIR`、`PAGE_MCP_CONTEXT_FILE`、`PAGE_MCP_PORT` 和 `PAGE_MCP_CAPABILITY`。这样原任务的存储和链接可以继续使用。
+
+管理启动器默认开启自动更新。首次启动及之后每 24 小时在后台检查 npm 的 `latest`。包通过 SHA-512 校验和 MCP 自检后，下次启动一起切换页面服务和 MCP。下载或自检失败时继续用当前版本。关闭更新会暂停检查，并暂停待生效版本的切换。
+
+```powershell
+instant-page-mcp-managed status
+instant-page-mcp-managed update off
+instant-page-mcp-managed update on
+```
+
+### 从源码安装
 
 从源码安装时，在仓库根目录用 PowerShell 打包。
 
 ```powershell
 New-Item -ItemType Directory -Force -Path release | Out-Null
 npm pack --pack-destination release
-npm install -g .\release\instant-page-mcp-0.4.1.tgz
+npm install -g .\release\instant-page-mcp-0.4.2.tgz
 instant-page-mcp-demo
 ```
 
 演示在终端打印车辆表单和记录列表链接。按 Ctrl+C 停止后，可用 `instant-page-mcp-demo --interaction` 体验一次性页面。
 
-实际接入分为持续运行的页面服务和按 stdio 启动的 MCP 进程。以下用空的示例授权目录启动服务，README 中三个内联请求都可在这个范围内运行。
+### 分开运行页面服务与 MCP
+
+接入系统也可自行启动页面服务和 stdio MCP，分别管理它们的版本。以下用空的示例授权目录启动服务，README 中三个内联请求都可在这个范围内运行。
 
 ```powershell
 $pkgDir = Join-Path (npm root -g) 'instant-page-mcp'

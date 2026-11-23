@@ -47,25 +47,45 @@ To accept one PNG or JPEG up to 10 MiB, add `attachment: {"label":"Product photo
 Requires Node.js 22 or later. The core has no npm runtime dependencies. Codex, CodeFlowMu, and the WeChat bridge are optional integrations. Install from npm and start the demo:
 
 ```powershell
-npm install -g instant-page-mcp@0.4.1
+npm install -g instant-page-mcp
 instant-page-mcp-demo
 ```
 
-To upgrade a global installation, run `npm install -g instant-page-mcp@latest`, then restart the IPM service and the host's MCP session.
-If Codex's launch command still points to a source checkout or a pinned version, update the launch command first.
+### Codex setup and automatic updates
+
+Starting in `0.4.2`, the managed launcher runs the MCP connection and the local page service together. Install a release with the launcher and register it once when setting up Codex or migrating from `0.4.1`.
+
+```powershell
+$ipmDir = Join-Path (npm root -g) 'instant-page-mcp'
+codex mcp add instant-page-mcp -- node (Join-Path $ipmDir 'bin/managed.mjs')
+```
+
+Restart the MCP session in Codex. On Windows the default data directory is `%LOCALAPPDATA%\instant-page-mcp\data`. One managed session can listen on local port `8765` at a time. To migrate existing data and links, stop the old page service and carry `PAGE_MCP_DATA_DIR`, `PAGE_MCP_CONTEXT_FILE`, `PAGE_MCP_PORT`, and `PAGE_MCP_CAPABILITY` into the same Codex entry.
+
+Managed updates are enabled by default. The launcher checks npm `latest` in the background on first start and every 24 hours. After SHA-512 verification and an MCP self-test, the launcher starts the verified version on the next launch. A failed download or check leaves the current version active. Turning updates off pauses checks and activation of prepared versions.
+
+```powershell
+instant-page-mcp-managed status
+instant-page-mcp-managed update off
+instant-page-mcp-managed update on
+```
+
+### Build from source
 
 To build from source, run these commands in Windows PowerShell from the repository root:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path release | Out-Null
 npm pack --pack-destination release
-npm install -g .\release\instant-page-mcp-0.4.1.tgz
+npm install -g .\release\instant-page-mcp-0.4.2.tgz
 instant-page-mcp-demo
 ```
 
 Open the URLs printed in the terminal. Stop the demo with Ctrl+C and run `instant-page-mcp-demo --interaction` to try single-use pages.
 
-Run a persistent browser service and a separate MCP stdio process for host integration. The bundled empty context supports the inline examples above.
+### Separate page service and MCP process
+
+Hosts can run the page service and the MCP stdio process separately and manage their versions. The bundled empty context supports the inline examples above.
 
 ```powershell
 $pkgDir = Join-Path (npm root -g) 'instant-page-mcp'
